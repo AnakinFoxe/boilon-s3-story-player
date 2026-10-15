@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="372" viewBox="0 0 680 372" role="img">
+<title>设备上的存储全景</title>
+<desc>ESP32-S3 芯片封装里有 CPU、内部 SRAM 512 KB、缓存 64 KB、PSRAM 8 MB、ROM 384 KB 和 eFuse；芯片外面有 TF 卡和 16 MB Flash。CPU 直接连内部 SRAM，经过缓存访问 PSRAM 和 Flash；TF 卡的数据要靠驱动按文件读进内存。</desc>
+<style>
+.bg{fill:#ffffff}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",sans-serif}
+.th{font-size:14px;font-weight:600;fill:#1f2328}
+.ts{font-size:12px;fill:#59636e}
+.ln{fill:none;stroke:#59636e}
+.frame{fill:none;stroke:#8c959f}
+.teal>rect,rect.teal{fill:#E1F5EE;stroke:#0F6E56}
+.teal>.th{fill:#085041}
+.teal>.ts{fill:#0F6E56}
+.coral>rect,rect.coral{fill:#FAECE7;stroke:#993C1D}
+.coral>.th{fill:#712B13}
+.coral>.ts{fill:#993C1D}
+.gray>rect,rect.gray{fill:#F1EFE8;stroke:#5F5E5A}
+.gray>.th{fill:#444441}
+.gray>.ts{fill:#5F5E5A}
+@media (prefers-color-scheme:dark){
+.bg{fill:#0d1117}
+.th{fill:#e6edf3}
+.ts{fill:#9198a1}
+.ln{stroke:#9198a1}
+.frame{stroke:#6e7681}
+.teal>rect,rect.teal{fill:#085041;stroke:#5DCAA5}
+.teal>.th{fill:#9FE1CB}
+.teal>.ts{fill:#5DCAA5}
+.coral>rect,rect.coral{fill:#712B13;stroke:#F0997B}
+.coral>.th{fill:#F5C4B3}
+.coral>.ts{fill:#F0997B}
+.gray>rect,rect.gray{fill:#444441;stroke:#B4B2A9}
+.gray>.th{fill:#D3D1C7}
+.gray>.ts{fill:#B4B2A9}
+}
+</style>
+<rect class="bg" width="680" height="372" rx="12"/>
+<rect class="frame" x="30" y="24" width="440" height="286" rx="16" stroke-width="1" stroke-dasharray="5 4"/>
+<text class="th" x="50" y="50">ESP32-S3 芯片（同一个封装里）</text>
+<rect class="frame" x="490" y="24" width="160" height="206" rx="16" stroke-width="1" stroke-dasharray="5 4"/>
+<text class="th" x="508" y="50">芯片外面</text>
+<line class="ln" x1="160" y1="100" x2="200" y2="100" stroke-width="1"/>
+<path class="ln" d="M160 116 L180 116 L180 180 L200 180" stroke-width="1"/>
+<line class="ln" x1="325" y1="208" x2="325" y2="232" stroke-width="1"/>
+<line class="ln" x1="450" y1="180" x2="506" y2="180" stroke-width="1"/>
+<line class="ln" x1="450" y1="100" x2="506" y2="100" stroke-width="1" stroke-dasharray="4 3"/>
+<g class="gray"><rect x="50" y="72" width="110" height="56" rx="8" stroke-width="0.8"/><text class="th" x="105" y="90" text-anchor="middle" dominant-baseline="central">CPU</text><text class="ts" x="105" y="108" text-anchor="middle" dominant-baseline="central">双核 240 MHz</text></g>
+<g class="teal"><rect x="200" y="72" width="250" height="56" rx="8" stroke-width="0.8"/><text class="th" x="325" y="90" text-anchor="middle" dominant-baseline="central">内部 SRAM · 512 KB</text><text class="ts" x="325" y="108" text-anchor="middle" dominant-baseline="central">最快、最小，CPU 直接用</text></g>
+<g class="coral"><rect x="50" y="152" width="110" height="56" rx="8" stroke-width="0.8"/><text class="th" x="105" y="170" text-anchor="middle" dominant-baseline="central">ROM 384 KB</text><text class="ts" x="105" y="188" text-anchor="middle" dominant-baseline="central">出厂固化</text></g>
+<g class="gray"><rect x="200" y="152" width="250" height="56" rx="8" stroke-width="0.8"/><text class="th" x="325" y="170" text-anchor="middle" dominant-baseline="central">缓存 64 KB</text><text class="ts" x="325" y="188" text-anchor="middle" dominant-baseline="central">从 SRAM 划出，给外面两块提速</text></g>
+<g class="coral"><rect x="50" y="232" width="110" height="56" rx="8" stroke-width="0.8"/><text class="th" x="105" y="250" text-anchor="middle" dominant-baseline="central">eFuse</text><text class="ts" x="105" y="268" text-anchor="middle" dominant-baseline="central">身份、密钥</text></g>
+<g class="teal"><rect x="200" y="232" width="250" height="56" rx="8" stroke-width="0.8"/><text class="th" x="325" y="250" text-anchor="middle" dominant-baseline="central">PSRAM · 8 MB</text><text class="ts" x="325" y="268" text-anchor="middle" dominant-baseline="central">封装里另一颗芯片，大但慢一些</text></g>
+<g class="coral"><rect x="506" y="72" width="128" height="56" rx="8" stroke-width="0.8"/><text class="th" x="570" y="90" text-anchor="middle" dominant-baseline="central">TF 卡</text><text class="ts" x="570" y="108" text-anchor="middle" dominant-baseline="central">故事、升级文件</text></g>
+<g class="coral"><rect x="506" y="152" width="128" height="56" rx="8" stroke-width="0.8"/><text class="th" x="570" y="170" text-anchor="middle" dominant-baseline="central">Flash · 16 MB</text><text class="ts" x="570" y="188" text-anchor="middle" dominant-baseline="central">固件、设置</text></g>
+<rect class="teal" x="40" y="333" width="14" height="14" rx="3" stroke-width="0.8"/>
+<text class="ts" x="62" y="340" dominant-baseline="central">断电就丢（RAM）</text>
+<rect class="coral" x="184" y="333" width="14" height="14" rx="3" stroke-width="0.8"/>
+<text class="ts" x="206" y="340" dominant-baseline="central">断电还在（存储）</text>
+<rect class="gray" x="330" y="333" width="14" height="14" rx="3" stroke-width="0.8"/>
+<text class="ts" x="352" y="340" dominant-baseline="central">CPU 与缓存</text>
+<line class="ln" x1="440" y1="340" x2="470" y2="340" stroke-width="1" stroke-dasharray="4 3"/>
+<text class="ts" x="478" y="340" dominant-baseline="central">虚线：靠驱动按文件读</text>
+</svg>

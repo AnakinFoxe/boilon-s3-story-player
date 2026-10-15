@@ -2,6 +2,7 @@
 set(SOURCES "audio/audio_codec.cc"
             "audio/audio_debugger.cc"
             "audio/audio_service.cc"
+            "audio/local_mp3_player.cc"
             "audio/demuxer/ogg_demuxer.cc"
             "notify/notify_player.cc"
             "audio/codecs/no_audio_codec.cc"
@@ -91,7 +92,29 @@ set(EMOTE_RESOLUTION "320_240")
 
 # Select the board source directory from Kconfig
 # Set default assets if the board uses partition table V2
-if(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI)
+if(CONFIG_BOARD_TYPE_BOILON_S3_GEN2)
+    set(BOARD_DIR "boilon-s3-gen2")
+    # The exploration-stage diagnostic variants were removed after dc0cc229;
+    # the daily local library still uses the isolated-entry build below.
+    if(CONFIG_BOILON_S3_GEN2_LOCAL_LIBRARY)
+        set(BOILON_S3_GEN2_DIAGNOSTIC_BUILD TRUE)
+        set(BOILON_S3_GEN2_LOCAL_MP3_BUILD TRUE)
+        set(BOILON_S3_GEN2_LOCAL_LIBRARY_BUILD TRUE)
+        set(BOILON_S3_GEN2_DIAGNOSTIC_ENTRY "boards/boilon-s3-gen2/m2_library_main.cc")
+    elseif(CONFIG_BOILON_S3_GEN2_AI)
+        # The normal XiaoZhi runtime, entered through the board's own app_main.
+        set(BOILON_S3_GEN2_AI_BUILD TRUE)
+    else()
+        message(FATAL_ERROR
+            "BOILON S3 Gen2 requires an audited diagnostic stage"
+        )
+    endif()
+    if(BOILON_S3_GEN2_DIAGNOSTIC_BUILD)
+        # The isolated local-library image has its own entry; Application is
+        # never linked.
+        list(REMOVE_ITEM SOURCES "main.cc")
+    endif()
+elseif(CONFIG_BOARD_TYPE_BREAD_COMPACT_WIFI)
     set(BOARD_DIR "bread-compact-wifi")
     set(BUILTIN_TEXT_FONT font_noto_sans_basic_14_1)
     set(BUILTIN_ICON_FONT font_material_symbols_14_1)
@@ -1093,6 +1116,49 @@ if(CONFIG_IDF_TARGET_ESP32S3)
     list(APPEND SOURCES "boards/common/esp32_camera.cc")
 endif()
 
+# Keep the Gen2 diagnostic images independent from XiaoZhi runtime constructors
+# and embedded sounds. The board factory is still compiled to preserve the
+# normal board-selection chain, but no diagnostic entry instantiates it.
+if(BOILON_S3_GEN2_DIAGNOSTIC_BUILD)
+    set(SOURCES
+        "boards/boilon-s3-gen2/boilon_s3_gen2_board.cc"
+        ${BOILON_S3_GEN2_DIAGNOSTIC_ENTRY}
+    )
+    set(LANG_SOUNDS "")
+    set(COMMON_SOUNDS "")
+    if(BOILON_S3_GEN2_LOCAL_MP3_BUILD)
+        list(APPEND SOURCES
+            "audio/audio_codec.cc" "audio/audio_service.cc" "audio/local_mp3_player.cc"
+            "audio/audio_debugger.cc"
+            "media/media_catalog.cc" "media/player_controller.cc" "settings.cc")
+        if(BOILON_S3_GEN2_LOCAL_LIBRARY_BUILD)
+            list(APPEND SOURCES "media/player_gestures.cc" "media/playback_resume.cc")
+        endif()
+    endif()
+    if(BOILON_S3_GEN2_LOCAL_LIBRARY_BUILD)
+        # Reuse the unchanged JD9853 driver with Gen2's board-local vendor table.
+        list(APPEND SOURCES "boards/waveshare/esp32-s3-audio-board/esp_lcd_jd9853.c")
+        list(APPEND INCLUDE_DIRS "boards/waveshare/esp32-s3-audio-board")
+    endif()
+endif()
+
+# M3 AI variant: keep every upstream source, but take only the AI board factory
+# and entry from the Gen2 directory (its other entries and the diagnostic
+# factory belong to other variants). The offline player sources are shared.
+if(BOILON_S3_GEN2_AI_BUILD)
+    list(FILTER SOURCES EXCLUDE REGEX "/boards/boilon-s3-gen2/")
+    list(REMOVE_ITEM SOURCES "main.cc")
+    list(APPEND SOURCES
+        "boards/boilon-s3-gen2/m3_ai_board.cc" "boards/boilon-s3-gen2/m3_ai_main.cc"
+        "media/media_catalog.cc" "media/player_controller.cc"
+        "media/player_gestures.cc" "media/playback_resume.cc"
+        "boards/waveshare/esp32-s3-audio-board/esp_lcd_jd9853.c")
+    list(APPEND INCLUDE_DIRS "boards/waveshare/esp32-s3-audio-board")
+    # Never read, load models from or download into the factory assets partition.
+    set_source_files_properties("assets.cc" PROPERTIES
+        COMPILE_DEFINITIONS "PARTITION_LABEL=\"boilon_none\"")
+endif()
+
 set(MAIN_PRIV_REQUIRES_EXTRA "")
 if(CONFIG_XIAOZHI_NETWORK_ETHERNET AND CONFIG_XIAOZHI_ETH_PHY_IP101)
     list(APPEND MAIN_PRIV_REQUIRES_EXTRA espressif__ip101)
@@ -1119,35 +1185,81 @@ if(CONFIG_BOARD_TYPE_ESP32_P4_FUNCTION_EV_BOARD)
         sdmmc
     )
 endif()
+
+if(BOILON_S3_GEN2_DIAGNOSTIC_BUILD)
+    set(MAIN_PRIV_REQUIRES
+        esp_psram
+        esp_driver_gpio
+        esp_app_format
+        app_update
+        spi_flash
+    )
+    if(BOILON_S3_GEN2_LOCAL_LIBRARY_BUILD)
+        list(APPEND MAIN_PRIV_REQUIRES esp_lcd esp_driver_spi esp_driver_ledc esp_timer)
+        list(APPEND MAIN_PRIV_REQUIRES lvgl__lvgl 78__xiaozhi-fonts)
+    endif()
+    if(BOILON_S3_GEN2_LOCAL_MP3_BUILD)
+        list(APPEND MAIN_PRIV_REQUIRES esp_driver_sdmmc sdmmc fatfs esp_timer
+            esp_driver_i2c esp_driver_i2s espressif__esp_codec_dev)
+    endif()
+else()
+    set(MAIN_PRIV_REQUIRES
+        esp_pm
+        esp_psram
+        esp_netif
+        esp_eth
+        esp_driver_gpio
+        esp_driver_uart
+        esp_driver_spi
+        esp_driver_i2c
+        esp_driver_i2s
+        esp_driver_ledc
+        esp_driver_jpeg
+        esp_driver_ppa
+        esp_driver_tsens
+        esp_app_format
+        app_update
+        spi_flash
+        mbedtls
+        console
+        efuse
+        bt
+        fatfs
+        xiaozhi-fonts
+        ${MAIN_PRIV_REQUIRES_EXTRA}
+    )
+endif()
+
 idf_component_register(SRCS ${SOURCES}
                     EMBED_FILES ${LANG_SOUNDS} ${COMMON_SOUNDS}
                     INCLUDE_DIRS ${INCLUDE_DIRS}
                     WHOLE_ARCHIVE
-                    PRIV_REQUIRES
-                        esp_pm
-                        esp_psram
-                        esp_netif
-                        esp_eth
-                        esp_driver_gpio
-                        esp_driver_uart
-                        esp_driver_spi
-                        esp_driver_i2c
-                        esp_driver_i2s
-                        esp_driver_ledc
-                        esp_driver_jpeg
-                        esp_driver_ppa
-                        esp_driver_tsens
-                        esp_app_format
-                        app_update
-                        spi_flash
-                        mbedtls
-                        console
-                        efuse
-                        bt
-                        fatfs
-                        xiaozhi-fonts
-                        ${MAIN_PRIV_REQUIRES_EXTRA}
+                    PRIV_REQUIRES ${MAIN_PRIV_REQUIRES}
                     )
+
+if(BOILON_S3_GEN2_LOCAL_MP3_BUILD)
+    target_link_libraries(${COMPONENT_LIB} PRIVATE idf::esp_driver_sdmmc idf::sdmmc
+        idf::fatfs idf::esp_timer idf::esp_driver_i2c idf::esp_driver_i2s
+        idf::espressif__esp_codec_dev)
+endif()
+
+if(BOILON_S3_GEN2_LOCAL_LIBRARY_BUILD)
+    target_link_libraries(${COMPONENT_LIB} PRIVATE idf::esp_lcd idf::esp_driver_spi
+        idf::esp_driver_ledc idf::lvgl__lvgl idf::78__xiaozhi-fonts)
+endif()
+
+if(BOILON_S3_GEN2_AI_BUILD)
+    # Kconfig is unavailable during early expansion: add the player's SD card,
+    # LCD and ADC edges that the normal requirement list does not name.
+    target_link_libraries(${COMPONENT_LIB} PRIVATE idf::esp_driver_sdmmc idf::sdmmc
+        idf::esp_lcd idf::esp_adc)
+endif()
+
+if(BOILON_S3_GEN2_DIAGNOSTIC_BUILD)
+    # Keep the audited, side-effect-free C++ create_board() factory as a
+    # linker GC root. There is deliberately no call edge from app_main.
+    target_link_libraries(${COMPONENT_LIB} INTERFACE "-u _Z12create_boardv")
+endif()
 
 # Keep project-owned C++ on GNU C++23. ESP-IDF 6 may default to a newer
 # dialect; pin the baseline so main/ does not depend on it.

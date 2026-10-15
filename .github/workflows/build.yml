@@ -1,105 +1,119 @@
-name: Build Boards
+name: Build BOILON S3
 
 on:
-  # Manual runs exercise the full matrix, including CI-specific options.
-  workflow_dispatch:
   push:
     branches:
       - main
       - ci/* # for ci test
+    # Markdown-only changes do not affect host tests or firmware.
+    paths-ignore:
+      - '**.md'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
 
 permissions:
   contents: read
 
+# A new push to a pull request cancels that PR's older run; every push run keeps its own group.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   prepare:
-    name: Determine variants to build
+    name: Test build tooling
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:v6.1
-    outputs:
-      variants: ${{ steps.select.outputs.variants }}
+      image: espressif/idf:v6.0.2
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Test build tooling
-        run: python -m unittest discover -s scripts/tests -v
-
-      - id: select
-        name: Select variants based on changes
-        shell: bash
+        # glibc annotates closedir; GCC warns when its type is a template argument.
+        # Keep every other host warning fatal; firmware flags are unchanged.
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
+          CXX: "c++ -Wno-error=ignored-attributes"
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          CHANGED_FILE="$RUNNER_TEMP/changed-files.txt"
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            git ls-files > "$CHANGED_FILE"
-          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
-            # Checkout is the synthetic merge commit. Compare the PR branch
-            # from its merge base, excluding unrelated updates on main.
-            git diff --name-only --no-renames HEAD^1...HEAD^2 > "$CHANGED_FILE"
-          elif [[ "$BEFORE_SHA" =~ ^0+$ && "$GITHUB_REF" != "refs/heads/main" ]] && \
-               BASE_SHA=$(git merge-base HEAD origin/main); then
-            # First push of a ci/* branch has an all-zero before SHA.
-            git diff --name-only --no-renames "$BASE_SHA" HEAD > "$CHANGED_FILE"
-          elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]] && \
-               git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
-            git diff --name-only --no-renames "$BEFORE_SHA" HEAD > "$CHANGED_FILE"
-          else
-            # A missing baseline (e.g. an unavailable force-pushed commit)
-            # must not silently omit changed boards.
-            git ls-files > "$CHANGED_FILE"
-          fi
-
-          cat "$CHANGED_FILE"
-
-          # Keep the full manual matrix out of environment variables.
-          python scripts/build.py --select-changed < "$CHANGED_FILE" > "$RUNNER_TEMP/variants.json"
-          {
-            printf 'variants='
-            cat "$RUNNER_TEMP/variants.json"
-          } >> "$GITHUB_OUTPUT"
+          python -m unittest -v \
+            scripts.tests.test_build \
+            scripts.tests.test_build_default_assets \
+            scripts.tests.test_boilon_gen2_build_guard \
+            scripts.tests.test_media_catalog_host \
+            scripts.tests.test_local_mp3_host \
+            scripts.tests.test_playback_only_host \
+            scripts.tests.test_m3_ai_host \
+            scripts.tests.test_m3_ai_network \
+            scripts.tests.test_m3_ai_session \
+            scripts.tests.test_m3_ai_device \
+            scripts.tests.test_m3_ai_focus \
+            scripts.tests.test_m3_ai_echo \
+            scripts.tests.test_m3_ai_library \
+            scripts.tests.test_boilon_catalog_psram \
+            scripts.tests.test_boilon_p1_5_sd \
+            scripts.tests.test_m2_library_runtime_host \
+            scripts.tests.test_m2_library_ui \
+            scripts.tests.test_m2_volume_scale \
+            scripts.tests.test_m2_resume_runtime \
+            scripts.tests.test_m2_resume_worker \
+            scripts.tests.test_m2_resume_store \
+            scripts.tests.test_playback_resume_host \
+            scripts.tests.test_m2_battery \
+            scripts.tests.test_p5_1_ui \
+            scripts.tests.test_m2_file_bookmarks \
+            scripts.tests.test_m2_mp3_duration \
+            scripts.tests.test_m2_library_gestures \
+            scripts.tests.test_player_controller_host \
+            scripts.tests.test_player_gestures_host \
+            scripts.tests.test_m2_library_startup \
+            scripts.tests.test_m2_library_host \
+            scripts.tests.test_media_wav_format \
+            scripts.tests.test_m5_power_policy \
+            scripts.tests.test_m6_release \
+            scripts.tests.test_m7_sd_update \
+            scripts.tests.test_boilon_rom_latch \
+            scripts.tests.test_boilon_otadata \
+            scripts.tests.test_boilon_collect_licenses
 
   build:
-    name: Build ${{ matrix.ci_name || matrix.full_name }}
+    name: Build ${{ matrix.name }}
     needs: prepare
-    if: ${{ needs.prepare.outputs.variants != '[]' }}
     strategy:
-      fail-fast: false  # 单个变体失败不影响其它变体
+      fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.prepare.outputs.variants) }}
+        name:
+          - boilon-s3-gen2-local-library
+          - boilon-s3-gen2-ai
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:v6.1
+      image: espressif/idf:v6.0.2
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Build current variant
-        shell: bash
+        # Avoid update-advisory Kconfig errors; build the checked-in lockfile.
         env:
-          BOARD: ${{ matrix.board }}
-          VARIANT: ${{ matrix.name }}
-          BUILD_OPTIONS_JSON: ${{ toJSON(matrix.ci_build_options) }}
+          IDF_COMPONENT_CHECK_NEW_VERSION: "0"
+        shell: bash
         run: |
-          source "$IDF_PATH/export.sh"
-          OPTIONS=()
-          if [[ "$BUILD_OPTIONS_JSON" != "null" && -n "$BUILD_OPTIONS_JSON" ]]; then
-            OPTIONS+=(--build-options-json "$BUILD_OPTIONS_JSON")
-          fi
-          python scripts/build.py "$BOARD" --name "$VARIANT" "${OPTIONS[@]}"
+          source $IDF_PATH/export.sh
+          python scripts/build.py boilon-s3-gen2 --name ${{ matrix.name }}
+
+      - name: Test OTA, NVS and local codec paths
+        shell: bash
+        run: |
+          source $IDF_PATH/export.sh
+          export BOILON_TEST_IDF_PYTHON="$(command -v python)"
+          export BOILON_TEST_CJSON_DIR="$PWD/managed_components/espressif__cjson/cJSON"
+          python -m unittest -v scripts.tests.test_boilon_p1_6_safety scripts.tests.test_m2_local_codec
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: xiaozhi_${{ matrix.ci_name || matrix.full_name }}_${{ github.sha }}
-          path: build/merged-binary.bin
+          name: xiaozhi_${{ matrix.name }}_${{ github.sha }}
+          path: build/xiaozhi.bin
           if-no-files-found: error

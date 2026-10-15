@@ -6,6 +6,13 @@ config OTA_URL
     help
         The application will access this URL to check for new firmwares and server address.
 
+# Release policy, intentionally hidden: BOILON never takes firmware offered over the
+# network (USB install or its own SD-card update), regardless of a saved sdkconfig value.
+config FIRMWARE_UPGRADE_ENABLED
+    bool
+    default y
+    depends on !BOARD_TYPE_BOILON_S3_GEN2
+
 choice
     prompt "Flash Assets"
     default FLASH_DEFAULT_ASSETS if !USE_EMOTE_MESSAGE_STYLE
@@ -157,6 +164,9 @@ choice BOARD_TYPE
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_ATK_DNESP32S3M_WIFI
         bool "Alientek ATK-DNESP32S3M Wi-Fi (正点原子)"
+        depends on IDF_TARGET_ESP32S3
+    config BOARD_TYPE_BOILON_S3_GEN2
+        bool "BOILON S3 Gen2"
         depends on IDF_TARGET_ESP32S3
     config BOARD_TYPE_BREAD_COMPACT_ESP32
         bool "Bread Compact ESP32 DevKit (面包板)"
@@ -644,6 +654,19 @@ choice BOARD_TYPE
     config BOARD_TYPE_ZHENGCHEN_CAM
         bool "Zhengchen AI Camera Wi-Fi (征辰科技)"
         depends on IDF_TARGET_ESP32S3
+endchoice
+
+choice BOILON_S3_GEN2_DIAGNOSTIC_STAGE
+    prompt "BOILON S3 Gen2 firmware variant"
+    depends on BOARD_TYPE_BOILON_S3_GEN2
+    default BOILON_S3_GEN2_LOCAL_LIBRARY
+
+    config BOILON_S3_GEN2_LOCAL_LIBRARY
+        bool "M2 local library (read-only SD, track controls, no network)"
+
+    config BOILON_S3_GEN2_AI
+        bool "M3 AI variant (XiaoZhi Application beside the offline player)"
+
 endchoice
 
 choice XIAOZHI_NETWORK_TYPE

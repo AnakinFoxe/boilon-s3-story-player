@@ -2,6 +2,7 @@
 #include "system_info.h"
 #include "settings.h"
 #include "assets/lang_config.h"
+#include "sdkconfig.h"
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -224,6 +225,7 @@ NetworkResult<> Ota::CheckVersion() {
     }
 
     has_new_version_ = false;
+#if CONFIG_FIRMWARE_UPGRADE_ENABLED
     cJSON *firmware = cJSON_GetObjectItem(root, "firmware");
     if (cJSON_IsObject(firmware)) {
         cJSON *version = cJSON_GetObjectItem(firmware, "version");
@@ -252,12 +254,18 @@ NetworkResult<> Ota::CheckVersion() {
     } else {
         ESP_LOGW(TAG, "No firmware section found!");
     }
+#else
+    // Still accept activation and transport configuration, never firmware offers.
+    firmware_version_.clear();
+    firmware_url_.clear();
+#endif
 
     cJSON_Delete(root);
     return {};
 }
 
 void Ota::MarkCurrentVersionValid() {
+#if CONFIG_FIRMWARE_UPGRADE_ENABLED
     auto partition = esp_ota_get_running_partition();
     if (strcmp(partition->label, "factory") == 0) {
         ESP_LOGI(TAG, "Running from factory partition, skipping");
@@ -275,9 +283,16 @@ void Ota::MarkCurrentVersionValid() {
         ESP_LOGI(TAG, "Marking firmware as valid");
         esp_ota_mark_app_valid_cancel_rollback();
     }
+#endif
 }
 
 bool Ota::Upgrade(const std::string& firmware_url, std::function<void(int progress, size_t speed)> callback) {
+#if !CONFIG_FIRMWARE_UPGRADE_ENABLED
+    (void)firmware_url;
+    (void)callback;
+    ESP_LOGW(TAG, "Firmware upgrade is disabled by the release policy");
+    return false;
+#else
     ESP_LOGI(TAG, "Upgrading firmware from %s", firmware_url.c_str());
     esp_ota_handle_t update_handle = 0;
     auto update_partition = esp_ota_get_next_update_partition(NULL);
@@ -403,6 +418,7 @@ bool Ota::Upgrade(const std::string& firmware_url, std::function<void(int progre
 
     ESP_LOGI(TAG, "Firmware upgrade successful");
     return true;
+#endif
 }
 
 bool Ota::StartUpgrade(std::function<void(int progress, size_t speed)> callback) {

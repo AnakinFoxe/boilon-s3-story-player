@@ -7,6 +7,7 @@ import zipfile
 import argparse
 import re
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 from pathlib import Path
@@ -80,6 +81,142 @@ def _run_idf(*args: str, preview: bool = False) -> None:
 
 def merge_bin(preview: bool = False) -> None:
     _run_idf("merge-bin", preview=preview)
+
+
+def _flash_manifest_paths() -> list[Path]:
+    """Return generated command manifests that can drive a flash target."""
+    build_dir = Path("build")
+    if not build_dir.is_dir():
+        return []
+    return sorted(build_dir.rglob("*flash*args*"))
+
+
+def _remove_flash_manifests(context: str) -> None:
+    """Remove generated flash shortcuts from a recovery-sensitive build."""
+    removed: list[Path] = []
+    for path in _flash_manifest_paths():
+        if path.is_dir():
+            raise RuntimeError(f"{context}: flash manifest path is a directory: {path}")
+        path.unlink()
+        removed.append(path)
+    if removed:
+        print(f"[SAFETY] Removed {len(removed)} flash command manifests")
+
+
+_WHOLE_FLASH_ARTIFACTS = (
+    Path("build/merged-binary.bin"),
+    Path("build/merged-binary.hex"),
+    Path("build/download.config"),
+)
+
+
+def _remove_app_only_outputs(context: str) -> None:
+    """Remove every known whole-flash shortcut from an app-only build."""
+    for path in _WHOLE_FLASH_ARTIFACTS:
+        if path.exists():
+            if path.is_dir():
+                raise RuntimeError(
+                    f"{context}: whole-flash artifact path is a directory: {path}"
+                )
+            path.unlink()
+            print(f"[SAFETY] Removed stale whole-flash artifact: {path}")
+    _remove_flash_manifests(context)
+
+
+@contextmanager
+def _guard_app_only_outputs(merge_enabled: bool, context: str):
+    """Clean generated flash shortcuts even when configure or build fails."""
+    try:
+        yield
+    finally:
+        if not merge_enabled:
+            _remove_app_only_outputs(context)
+
+
+def _artifact_settings(
+    build: dict[str, object],
+    context: str = "build configuration",
+) -> tuple[bool, Optional[int], Optional[int]]:
+    """Validate packaging and app-size guard fields for one build variant."""
+    merge_enabled = build.get("merge_bin", True)
+    if type(merge_enabled) is not bool:
+        raise ValueError(f"{context}: merge_bin must be a boolean")
+
+    limit = build.get("app_size_limit")
+    warning = build.get("app_size_warning")
+    for field, value in (
+        ("app_size_limit", limit),
+        ("app_size_warning", warning),
+    ):
+        if value is not None and (type(value) is not int or value <= 0):
+            raise ValueError(f"{context}: {field} must be a positive integer")
+    if limit is not None and warning is not None and warning > limit:
+        raise ValueError(
+            f"{context}: app_size_warning cannot exceed app_size_limit"
+        )
+    return merge_enabled, limit, warning
+
+
+def _prepare_artifact_output(
+    build: dict[str, object],
+    context: str = "build configuration",
+) -> None:
+    """Remove stale flash shortcuts before an app-only build starts."""
+    merge_enabled, _, _ = _artifact_settings(build, context)
+    if merge_enabled:
+        return
+    _remove_app_only_outputs(context)
+
+
+def _validate_app_binary(
+    build: dict[str, object],
+    context: str = "build configuration",
+) -> int:
+    """Apply configured hard and advisory size gates to the application image."""
+    _, limit, warning = _artifact_settings(build, context)
+    app_path = Path("build/xiaozhi.bin")
+    if not app_path.is_file():
+        raise RuntimeError(f"{context}: expected application image {app_path}")
+    size = app_path.stat().st_size
+    if limit is not None and size > limit:
+        raise RuntimeError(
+            f"{context}: application is {size} bytes, exceeding the "
+            f"{limit}-byte slot"
+        )
+    if warning is not None and size > warning:
+        print(
+            f"[WARN] {context}: application is {size} bytes, above the "
+            f"{warning}-byte diagnostic budget"
+        )
+    print(f"[INFO] Application image: {app_path} ({size} bytes)")
+    return size
+
+
+def _package_build_artifact(
+    build: dict[str, object],
+    *,
+    preview: bool,
+    context: str = "build configuration",
+) -> None:
+    """Create a whole-flash image only when the variant explicitly allows it."""
+    merge_enabled, _, _ = _artifact_settings(build, context)
+    if merge_enabled:
+        merge_bin(preview)
+        return
+
+    whole_flash_artifacts = [path for path in _WHOLE_FLASH_ARTIFACTS if path.exists()]
+    if whole_flash_artifacts:
+        raise RuntimeError(
+            f"{context}: forbidden whole-flash artifacts exist: "
+            + ", ".join(str(path) for path in whole_flash_artifacts)
+        )
+    manifests = _flash_manifest_paths()
+    if manifests:
+        raise RuntimeError(
+            f"{context}: forbidden flash command manifests exist: "
+            + ", ".join(str(path) for path in manifests)
+        )
+    print("[SAFETY] App-only build: whole-flash packaging skipped")
 
 
 def zip_bin(name: str, version: str) -> None:
@@ -919,6 +1056,10 @@ def _collect_variants(
             for build in builds:
                 name = _get_reported_name(build)
                 full_name = _get_release_full_name(manufacturer, build)
+                merge_enabled, _, _ = _artifact_settings(
+                    build,
+                    f"{cfg_path}: build {name!r}",
+                )
 
                 previous_config = name_owners.get(name)
                 if previous_config is not None:
@@ -945,6 +1086,12 @@ def _collect_variants(
                     "full_name": full_name,
                     "type": reported_type,
                     "target": target,
+                    "merge_bin": merge_enabled,
+                    "artifact_path": (
+                        "build/merged-binary.bin"
+                        if merge_enabled
+                        else "build/xiaozhi.bin"
+                    ),
                 })
 
         except Exception as e:
@@ -1572,6 +1719,13 @@ def build_board(
     for build in builds:
         name = _get_reported_name(build)
         final_name = _get_release_full_name(manufacturer, build)
+        artifact_context = f"{cfg_path}: build {name!r}"
+        merge_enabled, _, _ = _artifact_settings(build, artifact_context)
+        _prepare_artifact_output(build, artifact_context)
+        if create_zip and not merge_enabled:
+            raise ValueError(
+                f"{artifact_context}: --zip is unavailable for app-only builds"
+            )
 
         # Process sdkconfig_append
         build_sdkconfig_append = build.get("sdkconfig_append", [])
@@ -1668,26 +1822,33 @@ def build_board(
         for item in sdkconfig_append:
             print(f"sdkconfig_append: {item}")
 
-        _emit_build_stage("dependencies_resolving")
-        os.environ.pop("IDF_TARGET", None)
-        _prepare_target(target, preview)
-        _configure_build(
-            target,
-            sdkconfig_append,
-            name,
-            preview,
-        )
-        for symbols, option_name in validation_symbols:
-            _validate_configured_symbols(symbols, option_name)
-        _validate_configured_options(build_option_sdkconfig, "--build-options-json")
+        with _guard_app_only_outputs(merge_enabled, artifact_context):
+            _emit_build_stage("dependencies_resolving")
+            os.environ.pop("IDF_TARGET", None)
+            _prepare_target(target, preview)
+            _configure_build(
+                target,
+                sdkconfig_append,
+                name,
+                preview,
+            )
+            for symbols, option_name in validation_symbols:
+                _validate_configured_symbols(symbols, option_name)
+            _validate_configured_options(build_option_sdkconfig, "--build-options-json")
 
-        # build.name is the compatibility-sensitive OTA-reported board identity.
-        _emit_build_stage("compiling")
-        _run_idf("build", preview=preview)
+            # build.name is the compatibility-sensitive OTA-reported board identity.
+            _emit_build_stage("compiling")
+            _run_idf("build", preview=preview)
+        _validate_app_binary(build, artifact_context)
 
-        # merge-bin
+        # Whole-flash packaging is opt-in configurable so recovery-sensitive
+        # targets can expose only the exact application image.
         _emit_build_stage("packaging")
-        merge_bin(preview)
+        _package_build_artifact(
+            build,
+            preview=preview,
+            context=artifact_context,
+        )
 
         if create_zip:
             zip_bin(final_name, project_version)

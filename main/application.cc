@@ -1372,3 +1372,16 @@ void Application::ResetProtocol() {
         protocol_.reset();
     });
 }
+
+void Application::CloseConversation() {
+    Schedule([this]() {
+        auto state = GetDeviceState();
+        if (state == kDeviceStateNotifying) {
+            StopNotification();
+        } else if (state == kDeviceStateListening || state == kDeviceStateSpeaking) {
+            protocol_->CloseAudioChannel();  // OnAudioChannelClosed returns to idle
+        } else if (state == kDeviceStateConnecting) {
+            SetDeviceState(kDeviceStateIdle);  // The scheduled open sees this and stops
+        }
+    });
+}

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="606" viewBox="0 0 680 606" role="img">
+<title>Flash 16 MB 分区图（v1.1.2）</title>
+<desc>从地址 0 开始依次是：引导程序 32 KB、分区表 4 KB、nvs 32 KB、otadata 8 KB、phy_init 4 KB、空 48 KB、ota_0（3.875 MB，现为上一版 v1.1.1，约 2.5 MB）、ota_1（3.875 MB，现为正在运行的 v1.1.2，约 2.5 MB）、空 128 KB、assets 原厂资源 8 MB。我们会写的是 nvs、otadata 和两个固件槽。</desc>
+<style>
+.bg{fill:#ffffff}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",sans-serif}
+.th{font-size:14px;font-weight:600;fill:#1f2328}
+.ts{font-size:12px;fill:#59636e}
+.frame{fill:none;stroke:#8c959f}
+.purple>rect,rect.purple{fill:#EEEDFE;stroke:#534AB7}
+.purple>.th{fill:#3C3489}
+.purple>.ts{fill:#534AB7}
+.gray>rect,rect.gray{fill:#F1EFE8;stroke:#5F5E5A}
+.gray>.th{fill:#444441}
+.gray>.ts{fill:#5F5E5A}
+@media (prefers-color-scheme:dark){
+.bg{fill:#0d1117}
+.th{fill:#e6edf3}
+.ts{fill:#9198a1}
+.frame{stroke:#6e7681}
+.purple>rect,rect.purple{fill:#3C3489;stroke:#AFA9EC}
+.purple>.th{fill:#CECBF6}
+.purple>.ts{fill:#AFA9EC}
+.gray>rect,rect.gray{fill:#444441;stroke:#B4B2A9}
+.gray>.th{fill:#D3D1C7}
+.gray>.ts{fill:#B4B2A9}
+}
+</style>
+<rect class="bg" width="680" height="606" rx="12"/>
+<text class="ts" x="136" y="41" text-anchor="end" dominant-baseline="central">0x000000</text>
+<g class="gray"><rect x="150" y="24" width="300" height="34" rx="4" stroke-width="0.8"/><text class="th" x="300" y="41" text-anchor="middle" dominant-baseline="central">bootloader 引导程序 · 32 KB</text></g>
+<text class="ts" x="466" y="41" dominant-baseline="central">原厂的，支持自动回滚</text>
+<text class="ts" x="136" y="79" text-anchor="end" dominant-baseline="central">0x008000</text>
+<g class="gray"><rect x="150" y="62" width="300" height="34" rx="4" stroke-width="0.8"/><text class="th" x="300" y="79" text-anchor="middle" dominant-baseline="central">分区表 · 4 KB</text></g>
+<text class="ts" x="466" y="79" dominant-baseline="central">原厂的，没动过</text>
+<text class="ts" x="136" y="117" text-anchor="end" dominant-baseline="central">0x009000</text>
+<g class="purple"><rect x="150" y="100" width="300" height="34" rx="4" stroke-width="0.8"/><text class="th" x="300" y="117" text-anchor="middle" dominant-baseline="central">nvs 设置区 · 32 KB</text></g>
+<text class="ts" x="466" y="117" dominant-baseline="central">运行时会写：Wi-Fi、断点、音量</text>
+<text class="ts" x="136" y="155" text-anchor="end" dominant-baseline="central">0x011000</text>
+<g class="purple"><rect x="150" y="138" width="300" height="34" rx="4" stroke-width="0.8"/><text class="th" x="300" y="155" text-anchor="middle" dominant-baseline="central">otadata 启动选择 · 8 KB</text></g>
+<text class="ts" x="466" y="155" dominant-baseline="central">每次 SD 升级都会改</text>
+<text class="ts" x="136" y="193" text-anchor="end" dominant-baseline="central">0x013000</text>
+<g class="gray"><rect x="150" y="176" width="300" height="34" rx="4" stroke-width="0.8"/><text class="th" x="300" y="193" text-anchor="middle" dominant-baseline="central">phy_init 射频参数 · 4 KB</text></g>
+<text class="ts" x="466" y="193" dominant-baseline="central">原厂的，没动过</text>
+<text class="ts" x="136" y="224" text-anchor="end" dominant-baseline="central">0x014000</text>
+<rect class="frame" x="150" y="214" width="300" height="20" rx="4" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text class="ts" x="300" y="224" text-anchor="middle" dominant-baseline="central">空 48 KB</text>
+<text class="ts" x="136" y="250" text-anchor="end" dominant-baseline="central">0x020000</text>
+<g class="purple"><rect x="150" y="238" width="196" height="76" rx="4" stroke-width="0.8"/><text class="th" x="248" y="266" text-anchor="middle" dominant-baseline="central">ota_0 · v1.1.1</text><text class="ts" x="248" y="288" text-anchor="middle" dominant-baseline="central">上一版，约 2.5 MB</text></g>
+<rect class="frame" x="346" y="238" width="104" height="76" rx="4" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text class="ts" x="398" y="276" text-anchor="middle" dominant-baseline="central">空 1.3 MB</text>
+<text class="ts" x="466" y="266" dominant-baseline="central">可以回退</text>
+<text class="ts" x="466" y="288" dominant-baseline="central">下次 SD 升级写这里</text>
+<text class="ts" x="136" y="330" text-anchor="end" dominant-baseline="central">0x400000</text>
+<g class="purple"><rect x="150" y="318" width="196" height="76" rx="4" stroke-width="0.8"/><text class="th" x="248" y="346" text-anchor="middle" dominant-baseline="central">ota_1 · v1.1.2</text><text class="ts" x="248" y="368" text-anchor="middle" dominant-baseline="central">正在运行，约 2.5 MB</text></g>
+<rect class="frame" x="346" y="318" width="104" height="76" rx="4" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text class="ts" x="398" y="356" text-anchor="middle" dominant-baseline="central">空 1.3 MB</text>
+<text class="ts" x="466" y="356" dominant-baseline="central">现在从这里启动</text>
+<text class="ts" x="136" y="408" text-anchor="end" dominant-baseline="central">0x7E0000</text>
+<rect class="frame" x="150" y="398" width="300" height="20" rx="4" stroke-width="0.8" stroke-dasharray="4 3"/>
+<text class="ts" x="300" y="408" text-anchor="middle" dominant-baseline="central">空 128 KB</text>
+<text class="ts" x="136" y="434" text-anchor="end" dominant-baseline="central">0x800000</text>
+<g class="gray"><rect x="150" y="422" width="300" height="120" rx="4" stroke-width="0.8"/><text class="th" x="300" y="472" text-anchor="middle" dominant-baseline="central">assets · 8 MB</text><text class="ts" x="300" y="494" text-anchor="middle" dominant-baseline="central">原厂资源包</text></g>
+<text class="ts" x="466" y="482" dominant-baseline="central">我们不用、不写</text>
+<text class="ts" x="136" y="542" text-anchor="end" dominant-baseline="central">0x1000000</text>
+<rect class="purple" x="150" y="569" width="14" height="14" rx="3" stroke-width="0.8"/>
+<text class="ts" x="172" y="576" dominant-baseline="central">我们的固件和设置</text>
+<rect class="gray" x="300" y="569" width="14" height="14" rx="3" stroke-width="0.8"/>
+<text class="ts" x="322" y="576" dominant-baseline="central">原厂的，我们不动</text>
+<rect class="frame" x="448" y="569" width="14" height="14" rx="3" stroke-width="0.8" stroke-dasharray="3 2"/>
+<text class="ts" x="470" y="576" dominant-baseline="central">空闲</text>
+</svg>

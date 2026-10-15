@@ -144,6 +144,8 @@ class WorkflowDiffTests(unittest.TestCase):
     """Exercise the workflow's actual shell against small local Git histories."""
 
     def setUp(self):
+        if "name: Select variants based on changes" not in (ROOT / ".github/workflows/build.yml").read_text():
+            self.skipTest("Boilon fork: CI builds its two variants without a selection step")
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)

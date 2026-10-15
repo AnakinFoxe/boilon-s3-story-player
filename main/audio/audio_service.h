@@ -99,9 +99,13 @@ struct AudioTask {
     AudioTaskType type;
     std::vector<int16_t> pcm;
     uint32_t timestamp = 0;
+    bool local_source = false;
+    uint64_t generation = 0;
     uint32_t playback_id = 0;
     uint32_t media_position_ms = 0;
 };
+
+enum class LocalPcmResult { kAccepted, kWouldBlock, kStale, kInvalid };
 
 struct DebugStatistics {
     uint32_t input_count = 0;
@@ -117,6 +121,12 @@ public:
     ~AudioService();
 
     void Initialize(AudioCodec* codec);
+    // Fresh instance only; Codec must outlive this service and its tasks.
+    // Configures PCM output without input, AFE or Opus. Call Start() once on
+    // success; Stop() is terminal in this mode (no task restart or mode switch).
+    // Only the local PCM producer is supported; voice/Opus/test/OGG entry points
+    // stay disabled. Initialization and Start/Stop are single-owner operations.
+    bool InitializePlaybackOnly(AudioCodec* codec);
     void Start();
     void Stop();
     void EncodeWakeWord();
@@ -147,6 +157,19 @@ public:
     bool ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples);
     void ResetDecoder();
     void SetModelsList(srmodel_list_t* models_list);
+
+    // Nonblocking local producer API. Codec rate, mono signed 16-bit, <=960 samples.
+    // A session owns the existing output exclusively; protocol input is rejected.
+    // Pause/End cannot recall the single block already handed to the codec.
+    uint64_t BeginLocalPlayback();  // 0 means stopped/busy; no implicit interruption.
+    LocalPcmResult SubmitLocalPcm(uint64_t session, std::vector<int16_t>& pcm);
+    bool PauseLocalPlayback(uint64_t session, bool paused);
+    void EndLocalPlayback(uint64_t session);
+    bool IsLocalPlaybackActive(uint64_t session);
+    int LocalOutputSampleRate() const;
+    // Samples whose Codec::OutputData call completed, excluding queued/in-flight
+    // PCM. This is not a physical DAC/DMA latency measurement.
+    uint64_t LocalPlaybackSamples(uint64_t session);
 
 private:
     AudioCodec* codec_ = nullptr;
@@ -193,7 +216,11 @@ private:
     bool decode_in_flight_ = false;
     bool output_in_flight_ = false;
     bool playback_drained_notified_ = true;
-    uint32_t playback_generation_ = 0;
+    uint64_t playback_generation_ = 0;
+    bool local_playback_active_ = false;
+    bool local_playback_paused_ = false;
+    uint64_t local_position_session_ = 0;
+    uint64_t local_completed_samples_ = 0;
     // For server AEC
     FixedQueue<uint32_t, MAX_TIMESTAMPS_IN_QUEUE> timestamp_queue_;
 
@@ -205,6 +232,8 @@ private:
     bool device_aec_enabled_ = false;
 #endif
     std::atomic<bool> service_stopped_{true};
+    bool playback_only_ = false;
+    bool playback_only_ready_ = false;
     std::atomic<bool> audio_input_need_warmup_{false};
 
     esp_timer_handle_t audio_power_timer_ = nullptr;
@@ -218,6 +247,7 @@ private:
     bool InitializeAudioEngine();
     void SetDecodeSampleRate(int sample_rate, int frame_duration);
     void CheckAndUpdateAudioPowerState();
+    bool CreateAudioPowerTimer();
     bool IsPlaybackDrainedLocked() const;
     bool MarkPlaybackDrainedLocked();
 };

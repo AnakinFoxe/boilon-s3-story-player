@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="336" viewBox="0 0 680 336" role="img">
+<title>开机时固件怎么进内存，以及内部 SRAM 怎么分（v1.1.2）</title>
+<desc>正在运行的槽里约 2.5 MB 的固件分三部分：1.68 MB 代码和 0.76 MB 常量不复制，经缓存按需从 Flash 读；约 110 KB 开机时复制进内部 SRAM。内部 SRAM 512 KB 按比例分为：缓存 64 KB、固件常驻 145 KB、预留给任务栈和 DMA 的 96 KB、普通堆 207 KB。</desc>
+<style>
+.bg{fill:#ffffff}
+text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Noto Sans SC",sans-serif}
+.th{font-size:14px;font-weight:600;fill:#1f2328}
+.ts{font-size:12px;fill:#59636e}
+.ln,.mk{fill:none;stroke:#59636e}
+.frame{fill:none;stroke:#8c959f}
+.teal>rect,rect.teal{fill:#E1F5EE;stroke:#0F6E56}
+.teal>.th{fill:#085041}
+.teal>.ts{fill:#0F6E56}
+.purple>rect,rect.purple{fill:#EEEDFE;stroke:#534AB7}
+.purple>.th{fill:#3C3489}
+.purple>.ts{fill:#534AB7}
+.gray>rect,rect.gray{fill:#F1EFE8;stroke:#5F5E5A}
+.gray>.th{fill:#444441}
+.gray>.ts{fill:#5F5E5A}
+@media (prefers-color-scheme:dark){
+.bg{fill:#0d1117}
+.th{fill:#e6edf3}
+.ts{fill:#9198a1}
+.ln,.mk{stroke:#9198a1}
+.frame{stroke:#6e7681}
+.teal>rect,rect.teal{fill:#085041;stroke:#5DCAA5}
+.teal>.th{fill:#9FE1CB}
+.teal>.ts{fill:#5DCAA5}
+.purple>rect,rect.purple{fill:#3C3489;stroke:#AFA9EC}
+.purple>.th{fill:#CECBF6}
+.purple>.ts{fill:#AFA9EC}
+.gray>rect,rect.gray{fill:#444441;stroke:#B4B2A9}
+.gray>.th{fill:#D3D1C7}
+.gray>.ts{fill:#B4B2A9}
+}
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="mk" d="M2 1L8 5L2 9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect class="bg" width="680" height="336" rx="12"/>
+<rect class="frame" x="40" y="20" width="600" height="114" rx="16" stroke-width="1" stroke-dasharray="5 4"/>
+<text class="th" x="58" y="44">Flash 里正在运行的槽：v1.1.2，约 2.5 MB</text>
+<g class="purple"><rect x="58" y="60" width="300" height="52" rx="6" stroke-width="0.8"/><text class="th" x="208" y="77" text-anchor="middle" dominant-baseline="central">代码 1.68 MB</text><text class="ts" x="208" y="95" text-anchor="middle" dominant-baseline="central">不复制，原地执行</text></g>
+<g class="purple"><rect x="366" y="60" width="150" height="52" rx="6" stroke-width="0.8"/><text class="th" x="441" y="77" text-anchor="middle" dominant-baseline="central">常量 0.76 MB</text><text class="ts" x="441" y="95" text-anchor="middle" dominant-baseline="central">字体、图案、声音</text></g>
+<g class="purple"><rect x="524" y="60" width="98" height="52" rx="6" stroke-width="0.8"/><text class="th" x="573" y="77" text-anchor="middle" dominant-baseline="central">110 KB</text><text class="ts" x="573" y="95" text-anchor="middle" dominant-baseline="central">开机复制</text></g>
+<line class="ln" x1="92" y1="114" x2="92" y2="234" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<path class="ln" d="M441 114 L441 150 L112 150 L112 234" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+<path class="ln" d="M573 114 L573 166 L250 166 L250 234" stroke-width="1.2" marker-end="url(#arrow)"/>
+<text class="ts" x="122" y="188" dominant-baseline="central">经缓存读，不复制</text>
+<text class="ts" x="262" y="188" dominant-baseline="central">开机时复制进来</text>
+<rect class="frame" x="40" y="202" width="600" height="112" rx="16" stroke-width="1" stroke-dasharray="5 4"/>
+<text class="th" x="622" y="224" text-anchor="end">内部 SRAM 512 KB（按比例）</text>
+<g class="gray"><rect x="58" y="238" width="70" height="56" stroke-width="0.8"/><text class="th" x="93" y="256" text-anchor="middle" dominant-baseline="central">缓存</text><text class="ts" x="93" y="274" text-anchor="middle" dominant-baseline="central">64 KB</text></g>
+<g class="purple"><rect x="128" y="238" width="160" height="56" stroke-width="0.8"/><text class="th" x="208" y="256" text-anchor="middle" dominant-baseline="central">固件常驻 145 KB</text><text class="ts" x="208" y="274" text-anchor="middle" dominant-baseline="central">常驻代码、全局变量</text></g>
+<g class="teal"><rect x="288" y="238" width="106" height="56" stroke-width="0.8"/><text class="th" x="341" y="256" text-anchor="middle" dominant-baseline="central">预留 96 KB</text><text class="ts" x="341" y="274" text-anchor="middle" dominant-baseline="central">只给栈和 DMA</text></g>
+<g class="teal"><rect x="394" y="238" width="228" height="56" stroke-width="0.8"/><text class="th" x="508" y="256" text-anchor="middle" dominant-baseline="central">普通堆 207 KB</text><text class="ts" x="508" y="274" text-anchor="middle" dominant-baseline="central">malloc 默认用这块</text></g>
+</svg>

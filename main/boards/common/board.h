@@ -52,6 +52,11 @@ private:
     Board& operator=(const Board&) = delete; // 禁用赋值操作
 
 protected:
+    // Allows deliberately transient board factories to satisfy the board
+    // selection contract without reading or creating persistent identity.
+    // Normal product boards must keep using Board().
+    struct TransientIdentityTag {};
+    explicit Board(TransientIdentityTag) noexcept {}
     Board();
     std::string GenerateUuid();
 

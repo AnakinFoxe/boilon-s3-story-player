@@ -46,6 +46,10 @@ AudioService::~AudioService() {
 }
 
 void AudioService::Initialize(AudioCodec* codec) {
+    if (playback_only_) {
+        ESP_LOGE(TAG, "Cannot switch a playback-only service to voice mode");
+        return;
+    }
     codec_ = codec;
     codec_->Start();
 
@@ -100,6 +104,28 @@ void AudioService::Initialize(AudioCodec* codec) {
         }
     });
 
+    CreateAudioPowerTimer();
+}
+
+bool AudioService::InitializePlaybackOnly(AudioCodec* codec) {
+    if (!codec || !event_group_ || codec_ || audio_power_timer_ ||
+        !service_stopped_.load() || codec->output_channels() != 1 ||
+        codec->output_sample_rate() < 8000 || codec->output_sample_rate() > 48000) {
+        return false;
+    }
+    // Latch this mode before any initialization effect; failures cannot be
+    // retried or switched to the full voice pipeline on this instance.
+    playback_only_ = true;
+    codec_ = codec;
+    if (!CreateAudioPowerTimer()) {
+        return false;
+    }
+    codec_->Start();
+    playback_only_ready_ = true;
+    return true;
+}
+
+bool AudioService::CreateAudioPowerTimer() {
     esp_timer_create_args_t audio_power_timer_args = {
         .callback =
             [](void* arg) {
@@ -111,10 +137,32 @@ void AudioService::Initialize(AudioCodec* codec) {
         .name = "audio_power_timer",
         .skip_unhandled_events = true,
     };
-    esp_timer_create(&audio_power_timer_args, &audio_power_timer_);
+    return esp_timer_create(&audio_power_timer_args, &audio_power_timer_) == ESP_OK;
 }
 
 void AudioService::Start() {
+    if (playback_only_) {
+        if (!playback_only_ready_) {
+            return;
+        }
+        playback_only_ready_ = false;  // One start attempt; Stop is terminal.
+        service_stopped_.store(false);
+        if (esp_timer_start_periodic(audio_power_timer_, 1000000) != ESP_OK) {
+            service_stopped_.store(true);
+            ESP_LOGE(TAG, "Failed to start playback power timer");
+            return;
+        }
+        if (xTaskCreate([](void* arg) {
+                auto* service = static_cast<AudioService*>(arg);
+                service->AudioOutputTask();
+                vTaskDelete(nullptr);
+            }, "audio_output", 4096, this, 4, &audio_output_task_handle_) != pdPASS) {
+            service_stopped_.store(true);
+            esp_timer_stop(audio_power_timer_);
+            ESP_LOGE(TAG, "Failed to create playback output task");
+        }
+        return;
+    }
     service_stopped_.store(false);
     xEventGroupClearBits(event_group_, AS_EVENT_AUDIO_TESTING_RUNNING | AS_EVENT_WAKE_WORD_RUNNING |
                                            AS_EVENT_AUDIO_PROCESSOR_RUNNING |
@@ -171,15 +219,22 @@ void AudioService::Start() {
 }
 
 void AudioService::Stop() {
+    if (playback_only_) {
+        playback_only_ready_ = false;
+    }
     esp_timer_stop(audio_power_timer_);
     service_stopped_.store(true);
-    xEventGroupSetBits(event_group_, AS_EVENT_AUDIO_TESTING_RUNNING | AS_EVENT_WAKE_WORD_RUNNING |
-                                         AS_EVENT_AUDIO_PROCESSOR_RUNNING);
+    if (event_group_ != nullptr) {
+        xEventGroupSetBits(event_group_, AS_EVENT_AUDIO_TESTING_RUNNING |
+            AS_EVENT_WAKE_WORD_RUNNING |
+            AS_EVENT_AUDIO_PROCESSOR_RUNNING);
+    }
 
     bool notify_drained = false;
     {
         std::lock_guard<std::mutex> lock(audio_queue_mutex_);
         ++playback_generation_;
+        local_playback_active_ = local_playback_paused_ = false;
         audio_encode_queue_.clear();
         audio_decode_queue_.clear();
         audio_playback_queue_.clear();
@@ -193,6 +248,9 @@ void AudioService::Stop() {
 }
 
 bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples) {
+    if (playback_only_) {
+        return false;
+    }
     if (!codec_->input_enabled()) {
         esp_timer_stop(audio_power_timer_);
         esp_timer_start_periodic(audio_power_timer_, AUDIO_POWER_CHECK_INTERVAL_MS * 1000);
@@ -326,14 +384,21 @@ void AudioService::AudioInputTask() {
 void AudioService::AudioOutputTask() {
     while (true) {
         std::unique_lock<std::mutex> lock(audio_queue_mutex_);
-        audio_queue_cv_.wait(
-            lock, [this]() { return !audio_playback_queue_.empty() || service_stopped_.load(); });
+        audio_queue_cv_.wait(lock, [this]() {
+            return (!audio_playback_queue_.empty() && !local_playback_paused_) ||
+                service_stopped_.load();
+        });
         if (service_stopped_.load()) {
             break;
         }
 
         auto task = std::move(audio_playback_queue_.front());
         audio_playback_queue_.pop_front();
+        if (task.local_source &&
+            (!local_playback_active_ || task.generation != playback_generation_)) {
+            audio_queue_cv_.notify_all();
+            continue;
+        }
         output_in_flight_ = true;
         audio_queue_cv_.notify_all();
         lock.unlock();
@@ -356,6 +421,8 @@ void AudioService::AudioOutputTask() {
 
         bool notify_drained = false;
         lock.lock();
+        if (task.local_source && task.generation == local_position_session_)
+            local_completed_samples_ += task.pcm.size();
 #if CONFIG_USE_SERVER_AEC
         /* Record the timestamp for server AEC */
         if (task.timestamp > 0) {
@@ -396,7 +463,7 @@ void AudioService::OpusCodecTask() {
             auto packet = std::move(audio_decode_queue_.front());
             audio_decode_queue_.pop_front();
             decode_in_flight_ = true;
-            const uint32_t generation = playback_generation_;
+            const uint64_t generation = playback_generation_;
             audio_queue_cv_.notify_all();
             lock.unlock();
 
@@ -606,20 +673,111 @@ void AudioService::PushTaskToEncodeQueue(AudioTaskType type, std::vector<int16_t
     }
 }
 
+int AudioService::LocalOutputSampleRate() const {
+    return codec_ ? codec_->output_sample_rate() : 0;
+}
+
+uint64_t AudioService::BeginLocalPlayback() {
+    std::lock_guard<std::mutex> lock(audio_queue_mutex_);
+    if (service_stopped_.load() || !codec_ || local_playback_active_ ||
+        (xEventGroupGetBits(event_group_) & AS_EVENT_AUDIO_TESTING_RUNNING) ||
+        !audio_testing_queue_.empty() ||
+        !IsPlaybackDrainedLocked()) {
+        return 0;
+    }
+    ++playback_generation_;
+    if (!playback_generation_) {
+        ++playback_generation_;
+    }
+    local_playback_active_ = true;
+    local_playback_paused_ = false;
+    local_position_session_ = playback_generation_;
+    local_completed_samples_ = 0;
+    audio_queue_cv_.notify_all();
+    return playback_generation_;
+}
+
+LocalPcmResult AudioService::SubmitLocalPcm(uint64_t session, std::vector<int16_t>& pcm) {
+    std::lock_guard<std::mutex> lock(audio_queue_mutex_);
+    if (service_stopped_.load() || !local_playback_active_ || session != playback_generation_) {
+        return LocalPcmResult::kStale;
+    }
+    if (pcm.empty() || pcm.size() > 960) {
+        return LocalPcmResult::kInvalid;
+    }
+    if (local_playback_paused_ || audio_playback_queue_.size() >= MAX_PLAYBACK_TASKS_IN_QUEUE) {
+        return LocalPcmResult::kWouldBlock;
+    }
+    AudioTask task;
+    task.type = kAudioTaskTypeDecodeToPlaybackQueue;
+    task.local_source = true;
+    task.generation = session;
+    task.pcm = std::move(pcm);
+    audio_playback_queue_.push_back(std::move(task));
+    playback_drained_notified_ = false;
+    audio_queue_cv_.notify_all();
+    return LocalPcmResult::kAccepted;
+}
+
+bool AudioService::PauseLocalPlayback(uint64_t session, bool paused) {
+    std::lock_guard<std::mutex> lock(audio_queue_mutex_);
+    if (!local_playback_active_ || session != playback_generation_ || service_stopped_.load()) {
+        return false;
+    }
+    local_playback_paused_ = paused;
+    audio_queue_cv_.notify_all();
+    return true;
+}
+
+bool AudioService::IsLocalPlaybackActive(uint64_t session) {
+    std::lock_guard<std::mutex> lock(audio_queue_mutex_);
+    return !service_stopped_.load() && local_playback_active_ && session == playback_generation_;
+}
+
+uint64_t AudioService::LocalPlaybackSamples(uint64_t session) {
+    std::lock_guard<std::mutex> lock(audio_queue_mutex_);
+    return session && session == local_position_session_ ? local_completed_samples_ : 0;
+}
+
+void AudioService::EndLocalPlayback(uint64_t session) {
+    bool notify = false;
+    {
+        std::lock_guard<std::mutex> lock(audio_queue_mutex_);
+        if (!local_playback_active_ || session != playback_generation_) {
+            return;
+        }
+        ++playback_generation_;
+        local_playback_active_ = local_playback_paused_ = false;
+        audio_playback_queue_.clear();
+        notify = MarkPlaybackDrainedLocked();
+        audio_queue_cv_.notify_all();
+    }
+    if (notify && callbacks_.on_playback_drained) {
+        callbacks_.on_playback_drained();
+    }
+}
+
 bool AudioService::PushPacketToDecodeQueue(std::unique_ptr<AudioStreamPacket> packet, bool wait) {
+    if (playback_only_) {
+        return false;
+    }
     std::unique_lock<std::mutex> lock(audio_queue_mutex_);
-    const uint32_t generation = playback_generation_;
+    if (local_playback_active_) {
+        return false;
+    }
+    const uint64_t generation = playback_generation_;
     if (audio_decode_queue_.size() >= MAX_DECODE_PACKETS_IN_QUEUE) {
         if (wait) {
             audio_queue_cv_.wait(lock, [this, generation]() {
-                return service_stopped_.load() || generation != playback_generation_ ||
+                return service_stopped_.load() || local_playback_active_ ||
+                       generation != playback_generation_ ||
                        audio_decode_queue_.size() < MAX_DECODE_PACKETS_IN_QUEUE;
             });
         } else {
             return false;
         }
     }
-    if (service_stopped_.load() || generation != playback_generation_) {
+    if (service_stopped_.load() || local_playback_active_ || generation != playback_generation_) {
         return false;
     }
     playback_drained_notified_ = false;
@@ -732,6 +890,9 @@ void AudioService::EnableVoiceProcessing(bool enable) {
 }
 
 void AudioService::EnableAudioTesting(bool enable) {
+    if (playback_only_) {
+        return;
+    }
     ESP_LOGI(TAG, "%s audio testing", enable ? "Enabling" : "Disabling");
     if (enable) {
         xEventGroupSetBits(event_group_, AS_EVENT_AUDIO_TESTING_RUNNING);
@@ -739,6 +900,10 @@ void AudioService::EnableAudioTesting(bool enable) {
         xEventGroupClearBits(event_group_, AS_EVENT_AUDIO_TESTING_RUNNING);
         /* Copy audio_testing_queue_ to audio_decode_queue_ */
         std::lock_guard<std::mutex> lock(audio_queue_mutex_);
+        if (local_playback_active_) {
+            audio_testing_queue_.clear();
+            return;
+        }
         audio_decode_queue_.clear();
         audio_decode_queue_.swap(audio_testing_queue_);
         if (!audio_decode_queue_.empty()) {
@@ -762,6 +927,9 @@ void AudioService::EnableDeviceAec(bool enable) {
 void AudioService::SetCallbacks(AudioServiceCallbacks& callbacks) { callbacks_ = callbacks; }
 
 void AudioService::PlaySound(const std::string_view& ogg) {
+    if (playback_only_) {
+        return;
+    }
     if (!codec_->output_enabled()) {
         esp_timer_stop(audio_power_timer_);
         esp_timer_start_periodic(audio_power_timer_, AUDIO_POWER_CHECK_INTERVAL_MS * 1000);
@@ -800,6 +968,7 @@ void AudioService::ResetDecoder() {
     {
         std::lock_guard<std::mutex> lock(audio_queue_mutex_);
         ++playback_generation_;
+        local_playback_active_ = local_playback_paused_ = false;
         std::unique_lock<std::mutex> decoder_lock(decoder_mutex_);
         if (opus_decoder_ != nullptr) {
             esp_opus_dec_reset(opus_decoder_);
@@ -823,7 +992,7 @@ bool AudioService::IsPlaybackDrainedLocked() const {
 }
 
 bool AudioService::MarkPlaybackDrainedLocked() {
-    if (!IsPlaybackDrainedLocked() || playback_drained_notified_) {
+    if (local_playback_active_ || !IsPlaybackDrainedLocked() || playback_drained_notified_) {
         return false;
     }
     playback_drained_notified_ = true;

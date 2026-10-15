@@ -7,7 +7,6 @@ dist/
 .devcontainer/
 sdkconfig.old
 sdkconfig
-dependencies.lock
 .env
 releases/
 main/assets/lang_config.h
@@ -18,3 +17,15 @@ main/mmap_generate_emoji.h
 *.bin
 mmap_generate_*.h
 .clangd
+/.tools/
+/.boilon-private/
+
+# BOILON device-local and confidential artifacts. Keep these outside Git.
+/device-private/
+/factory-backups/
+/serial-private/
+/hardware-private/
+boilon-efuse*.json
+boilon-efuse*.txt
+boilon-factory*
+boilon-full-*

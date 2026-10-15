@@ -126,6 +126,13 @@ public:
      */
     void ResetProtocol();
 
+    /**
+     * Close the current conversation (thread-safe)
+     * Ends a notification, a pending connection or the open audio channel;
+     * the device then returns to idle
+     */
+    void CloseConversation();
+
 private:
     Application();
     ~Application();

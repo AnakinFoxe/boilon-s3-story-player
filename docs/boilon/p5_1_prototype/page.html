@@ -1,0 +1,151 @@
+<title>Boilon 像素界面草图</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+QingKe+HuangYou&display=swap">
+<style>
+/* Layout: a quiet workbench. One control strip, then rows of true-pixel device screens with short captions. */
+:root {
+  --bg: #eceef4;
+  --surface: #ffffff;
+  --fg: #1d2033;
+  --muted: #5d6178;
+  --line: #d3d6e2;
+  --accent: #b97412;
+  --bezel: #20223a;
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-display: "ZCOOL QingKe HuangYou", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --s: 2;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #13141c; --surface: #1c1e2b; --fg: #eceae4; --muted: #9a9db2; --line: #2f3246; --accent: #f0b24a; --bezel: #07080d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #13141c; --surface: #1c1e2b; --fg: #eceae4; --muted: #9a9db2; --line: #2f3246; --accent: #f0b24a; --bezel: #07080d;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; }
+header h1 { font-family: var(--font-display); font-weight: 400; font-size: 34px; line-height: 1.15; margin: 0 0 6px; letter-spacing: 0.02em; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 68ch; }
+.meta { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); margin-top: 10px; }
+.controls {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+  margin: 22px -20px 8px; padding: 12px 20px; background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px); border-bottom: 1px solid var(--line);
+}
+.group { display: flex; align-items: center; gap: 8px; }
+.group > span { font-size: 13px; color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--surface); }
+.seg button, .toggle {
+  font: inherit; font-size: 13.5px; color: var(--fg); background: transparent; border: 0; padding: 5px 11px; cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.toggle { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.toggle[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+section { margin-top: 40px; }
+section h2 { font-family: var(--font-display); font-weight: 400; font-size: 24px; margin: 0 0 4px; letter-spacing: 0.02em; }
+section > p { margin: 0 0 18px; color: var(--muted); max-width: 72ch; }
+.grid { display: flex; flex-wrap: wrap; gap: 26px 22px; align-items: flex-start; }
+.shot { margin: 0; width: calc(240px * var(--s) + 16px); max-width: 100%; }
+.screen {
+  position: relative; width: calc(240px * var(--s)); height: calc(296px * var(--s));
+  border-radius: calc(40px * var(--s)); overflow: hidden;
+  box-shadow: 0 0 0 calc(4px * var(--s)) var(--bezel), 0 10px 24px rgba(0, 0, 0, 0.18);
+  margin: calc(4px * var(--s)) calc(4px * var(--s)) 14px;
+}
+.screen canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+.safe {
+  display: none; position: absolute; pointer-events: none;
+  left: calc(20px * var(--s)); top: calc(24px * var(--s)); width: calc(200px * var(--s)); height: calc(248px * var(--s));
+  outline: 1px dashed #ff3b8d; outline-offset: -1px;
+}
+.show-safe .safe { display: block; }
+figcaption { display: grid; gap: 2px; padding-inline: 4px; }
+figcaption b { font-weight: 600; font-size: 14.5px; }
+figcaption span { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.decide { list-style: none; counter-reset: d; display: flex; flex-wrap: wrap; gap: 8px 10px; padding: 0; margin: 16px 0 0; }
+.decide li { counter-increment: d; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 13.5px; color: var(--muted); }
+.decide li::before { content: counter(d); font-family: var(--font-mono); color: var(--accent); margin-right: 8px; }
+.decide b { color: var(--fg); font-weight: 600; margin-right: 6px; }
+.fine { margin: 10px 0 0; color: var(--muted); font-size: 13.5px; }
+.note { border-left: 3px solid var(--accent); padding: 4px 0 4px 14px; color: var(--muted); max-width: 72ch; margin: 0 0 18px; }
+@media (max-width: 560px) {
+  header h1 { font-size: 28px; }
+  .controls { gap: 8px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Boilon 像素界面草图</h1>
+    <p>P5-1 第二轮：播放器和 AI 两部分的主机原型。每张图都按 240×296 逐像素绘制，用的是设备里现有的 14 像素 Noto 中文字模和 LVGL 自带的 unscii-8 像素数字，颜色先量化到 RGB565，四角按估计的圆角裁掉。示例数据是假的。</p>
+    <div class="meta">240×296 · RGB565 · 圆角半径约 40 px（估计）· 1× 在 Retina 屏上约等于实物大小</div>
+    <ol class="decide">
+      <li><b>配色</b>默认暖纸，夜灯备选</li>
+      <li><b>播放页</b>默认 A 故事卡，C 喵喵陪听备选</li>
+      <li><b>AI 字幕</b>默认关，可打开</li>
+      <li><b>字库</b>保留常用字库，缺字显示方框</li>
+      <li><b>名字</b>喵喵</li>
+    </ol>
+    <p class="fine">三项备选都编进同一套代码，构建前选定组合；上面的按钮就是这几个选项。</p>
+  </header>
+
+  <div class="controls" role="toolbar" aria-label="预览设置">
+    <div class="group"><span>配色</span>
+      <div class="seg"><button id="t-paper" data-key="theme" data-val="paper">暖纸</button><button id="t-night" data-key="theme" data-val="night">夜灯</button></div>
+    </div>
+    <div class="group"><span>播放页</span>
+      <div class="seg"><button id="l-book" data-key="layout" data-val="book">A 故事卡</button><button id="l-cat" data-key="layout" data-val="cat">C 喵喵陪听</button></div>
+    </div>
+    <div class="group"><span>放大</span>
+      <div class="seg"><button id="s-1" data-key="scale" data-val="1">1×</button><button id="s-2" data-key="scale" data-val="2">2×</button><button id="s-3" data-key="scale" data-val="3">3×</button></div>
+    </div>
+    <button id="o-subs" class="toggle" data-key="subs">AI 字幕</button>
+    <button id="o-safe" class="toggle" data-key="safe">已验证可见区</button>
+    <button id="o-anim" class="toggle" data-key="anim">动画</button>
+  </div>
+
+  <section>
+    <h2>播放器</h2>
+    <p>A 和 C 共用同一套状态栏、进度条和时间行，只换中间区域。AI 在线时右上角显示小小的喵喵，不在线就不显示。</p>
+    <div class="grid" data-sec="player"></div>
+  </section>
+
+  <section>
+    <h2>覆盖提示与目录</h2>
+    <p>调音量、跳转和提示都是带硬阴影的小面板，叠在当前播放页上，过一会儿自动消失。</p>
+    <div class="grid" data-sec="overlay"></div>
+  </section>
+
+  <section>
+    <h2>AI 对话</h2>
+    <p>AI 用紫蓝底色和原创的橘色美短「喵喵」，和播放页一眼能分开。状态都对应设备里真实存在的状态：说话时按服务器的情绪换表情，断网、出错或没能开始时用「出错」脸；字幕开关在上面。</p>
+    <div class="grid" data-sec="ai"></div>
+  </section>
+
+  <section>
+    <h2>开机、没卡和配网</h2>
+    <p>只有本地故事和 AI 都用不了时才用整页提示。没卡和读卡出错的页面带上第四批的「没卡也能聊天」。</p>
+    <div class="grid" data-sec="system"></div>
+  </section>
+
+  <section>
+    <h2>字库覆盖</h2>
+    <p class="note">保留现在 6845 字的常用字库。字库里没有的字不再显示问号，改成一个空方框，一看就知道是缺字。</p>
+    <div class="grid" data-sec="font"></div>
+  </section>
+</div>
+
+<script>
+/*FONT_DATA*/
+/*PROTO_JS*/
+</script>

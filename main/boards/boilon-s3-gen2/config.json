@@ -1,0 +1,66 @@
+{
+    "type": "boilon-s3-gen2",
+    "target": "esp32s3",
+    "builds": [
+        {
+            "name": "boilon-s3-gen2-local-library",
+            "merge_bin": false,
+            "app_size_limit": 4063232,
+            "app_size_warning": 3670016,
+            "sdkconfig_append": [
+                "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions/boilon-s3-gen2.csv\"",
+                "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y",
+                "CONFIG_ESP_CONSOLE_SECONDARY_NONE=y",
+                "CONFIG_FLASH_NONE_ASSETS=y",
+                "CONFIG_WAKE_WORD_DISABLED=y",
+                "CONFIG_USE_AUDIO_PROCESSOR=n",
+                "CONFIG_COMPILER_CXX_EXCEPTIONS=n",
+                "CONFIG_COMPILER_CXX_RTTI=n",
+                "CONFIG_APP_REPRODUCIBLE_BUILD=y",
+                "CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y",
+                "CONFIG_SD_ENABLE_SDIO_SUPPORT=n",
+                "CONFIG_FATFS_LFN_HEAP=y",
+                "CONFIG_FATFS_API_ENCODING_UTF_8=y",
+                "CONFIG_CODEC_ES8311_SUPPORT=y",
+                "CONFIG_CODEC_I2C_BACKWARD_COMPATIBLE=n",
+                "CONFIG_USE_AUDIO_DEBUGGER=n",
+                "CONFIG_BOILON_S3_GEN2_LOCAL_LIBRARY=y",
+                "CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048",
+                "CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=98304",
+                "CONFIG_LV_USE_CLIB_MALLOC=y",
+                "CONFIG_LV_USE_BUILTIN_MALLOC=n",
+                "CONFIG_BOILON_S3_GEN2_AI=n"
+            ]
+        },
+        {
+            "name": "boilon-s3-gen2-ai",
+            "merge_bin": false,
+            "app_size_limit": 4063232,
+            "app_size_warning": 3670016,
+            "sdkconfig_append": [
+                "CONFIG_BOILON_S3_GEN2_LOCAL_LIBRARY=n",
+                "CONFIG_BOILON_S3_GEN2_AI=y",
+                "CONFIG_PARTITION_TABLE_CUSTOM_FILENAME=\"partitions/boilon-s3-gen2.csv\"",
+                "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y",
+                "CONFIG_ESP_CONSOLE_SECONDARY_NONE=y",
+                "CONFIG_FLASH_NONE_ASSETS=y",
+                "CONFIG_WAKE_WORD_DISABLED=y",
+                "CONFIG_USE_AUDIO_PROCESSOR=y",
+                "CONFIG_COMPILER_CXX_EXCEPTIONS=n",
+                "CONFIG_COMPILER_CXX_RTTI=n",
+                "CONFIG_APP_REPRODUCIBLE_BUILD=y",
+                "CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y",
+                "CONFIG_SD_ENABLE_SDIO_SUPPORT=n",
+                "CONFIG_FATFS_LFN_HEAP=y",
+                "CONFIG_FATFS_API_ENCODING_UTF_8=y",
+                "CONFIG_CODEC_ES8311_SUPPORT=y",
+                "CONFIG_CODEC_I2C_BACKWARD_COMPATIBLE=n",
+                "CONFIG_USE_AUDIO_DEBUGGER=n",
+                "CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048",
+                "CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=98304",
+                "CONFIG_LV_USE_CLIB_MALLOC=y",
+                "CONFIG_LV_USE_BUILTIN_MALLOC=n"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,13 @@
+Daily offline Beta common font
+
+Source: bundled 78/xiaozhi-fonts 2.0.0, cbin/font_noto_sans_common_14_1.bin.
+Source SHA-256: ccdfa4a7de73f584f0d7519be2d2785c4e9880446edf66c1635e676969c030ee
+The .inc is a mechanical xxd representation of the unchanged 269580-byte CBIN,
+aligned to four bytes and resident in application flash. It contains 6845 common
+characters, not every Unicode character. Since P5-1 (2026-10-12) a missing
+character draws as an empty box.
+No glyph drawing or font renaming was performed. Font data is under OFL-1.1;
+see m2_library_glyphs.OFL.txt (Copyright 2014-2021 Adobe, Reserved Font Name Source).
+Since P5-1 the board's own reader (CbinFont in p5_1_ui_canvas.h) draws it in
+place of the component's cbin_font loader; no generated/vendor file or
+component dependency is changed.

@@ -17,7 +17,9 @@
 #include <cstring>
 
 #define TAG "Assets"
+#ifndef PARTITION_LABEL
 #define PARTITION_LABEL "assets"
+#endif
 
 struct mmap_assets_table {
     char asset_name[32];   /*!< Name of the asset */

@@ -4,7 +4,7 @@
 
 XiaoZhi is an ESP-IDF C/C++ voice-assistant firmware supporting many chips, boards, displays, audio devices, and network transports. A build selects exactly one board implementation.
 
-Use ESP-IDF v6.1 when possible. The minimum supported SDK is ESP-IDF v6.0.1. IDF 5.x is not supported.
+Use ESP-IDF v6.0.2 for this fork. Upstream v2.5.2 supports SDK 6.0.1 or newer; adopting its 6.1 CI image is deferred until a separately validated SDK migration.
 
 ## Architecture
 
@@ -37,6 +37,15 @@ Read the closest existing implementation before adding a new one. Prefer the nar
 - Guard target-specific features with Kconfig/component rules. Do not assume every target has PSRAM or S3/P4 resources.
 - Do not manually edit generated/vendor output: `build/`, `releases/`, `managed_components/`, `components/`, `sdkconfig*`, `main/assets/lang_config.h`, or generated mmap headers.
 - Format only touched C/C++ files with the repository `.clang-format`; avoid unrelated mass formatting.
+
+## Boilon Fork
+
+This fork adds an unofficial firmware for the BOILON S3 Gen2 story player in `main/boards/boilon-s3-gen2/`, `main/media/` and `docs/boilon/`. It is a personal project.
+
+- Everything pushed to this public repository is published at once and cannot be taken back: files, commit messages, pull request descriptions, issues and comments. Never write personal or family details, local absolute paths, device identities (MAC addresses, USB serial numbers), Wi-Fi credentials, tokens, flash or NVS images, eFuse reports or unredacted serial logs into any of them.
+- Upstream changes arrive by merging formal upstream release tags. Prefer Boilon-owned files; keep edits to upstream-owned files small, generic and guarded, and name the upstream files a change touches.
+- Device actions (USB, serial port, flash, recovery) need the owner's explicit authorization each time; a passing build or test suite never grants it. Stop at the first anomaly and do not retry automatically.
+- For non-trivial work, keep the current plan in `docs/boilon/CURRENT_MILESTONE.md` and deferred items in `docs/boilon/BACKLOG.md`. Create them only when needed.
 
 ## Boards and Configuration
 
@@ -83,7 +92,11 @@ The build script changes local `sdkconfig` and build state. Do not assume the bu
 
 ## Authoritative Documentation
 
-- Overview and SDK policy: `README.md`
+- Overview and SDK policy: `README.md` (upstream XiaoZhi); Boilon fork overview: `.github/README.md`
+- BOILON S3 Gen2 board, variants and build guards: `main/boards/boilon-s3-gen2/README.md`
+- Backup, flashing and restore for other owners: `docs/boilon/FLASHING.md`
+- Boilon product and UI design: `docs/boilon/DESIGN.md`, `docs/boilon/UI_STYLE.md`
+- Boilon third-party licenses: `docs/boilon/THIRD_PARTY.md`
 - Board guide: `docs/custom-board.md`
 - Audio design: `main/audio/README.md`
 - Code style: `docs/code_style.md`
