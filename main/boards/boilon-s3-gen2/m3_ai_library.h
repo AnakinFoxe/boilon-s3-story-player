@@ -10,11 +10,13 @@
 #include <utility>
 #include <vector>
 #include "media/media_catalog.h"
+#include "media/player_controller.h"
 
-// P5-2: what 喵喵 can look up and play on the card. No ESP-IDF headers, so
-// test_m3_ai_library runs this exact code. The player publishes its catalog
-// once it plays and never changes it; the MCP tools on the main task only read
-// it and leave a pick for the player task to take.
+// P5-2: what 喵喵 can look up and play on the card, and (2026-10-15) how each
+// directory goes on after a file. No ESP-IDF headers, so test_m3_ai_library
+// runs this exact code. The player publishes its catalog once it plays and
+// never changes it; the MCP tools on the main task only read it and leave a
+// pick or a mode for the player task to take.
 namespace boilon::ai::card {
 // About 4 KB at most per reply: 20 entries, names shortened to 60 bytes.
 constexpr size_t kPageSize = 20, kMaxMatches = 20, kMaxNameBytes = 60;
@@ -149,10 +151,80 @@ inline void AppendFile(std::string& out, const media::Collection& collection, si
     out += '}';
 }
 
+// The modes as the tools name them, in the order of media::PlayMode.
+constexpr const char* kModeNames[] = {"order", "loop", "single", "shuffle"};
+inline const char* ModeName(media::PlayMode mode) { return kModeNames[static_cast<int>(mode)]; }
+inline std::optional<media::PlayMode> ParseMode(std::string_view name) {
+    for (int i = 0; i < 4; ++i)
+        if (name == kModeNames[i])
+            return static_cast<media::PlayMode>(i);
+    return std::nullopt;
+}
+// NVS bl_ai/play_modes: format byte 1, then for each directory not in order its
+// 8-byte catalog ID (little-endian) and mode byte, oldest first, at most
+// kMaxSaved. IDs of other cards stay, so their modes come back with the card.
+constexpr char kModesNamespace[] = "bl_ai";
+constexpr char kModesKey[] = "play_modes";
+constexpr uint8_t kModesFormat = 1;
+constexpr size_t kMaxSaved = 64;
+struct Saved {
+    uint64_t directory = 0;
+    media::PlayMode mode = media::PlayMode::kOrder;
+};
+// Another format is ignored (every directory in order) and never erased here;
+// a bad mode byte or a repeated ID drops only that entry.
+inline std::vector<Saved> DecodeModes(const std::vector<uint8_t>& bytes) {
+    std::vector<Saved> saved;
+    if (bytes.empty() || bytes[0] != kModesFormat || (bytes.size() - 1) % 9 ||
+        (bytes.size() - 1) / 9 > kMaxSaved)
+        return saved;
+    for (size_t at = 1; at < bytes.size(); at += 9) {
+        Saved entry;
+        for (size_t i = 0; i < 8; ++i)
+            entry.directory |= static_cast<uint64_t>(bytes[at + i]) << (8 * i);
+        const uint8_t mode = bytes[at + 8];
+        const bool repeated = std::any_of(saved.begin(), saved.end(), [&](const Saved& other) {
+            return other.directory == entry.directory;
+        });
+        if (mode < 1 || mode > 3 || repeated)
+            continue;
+        entry.mode = static_cast<media::PlayMode>(mode);
+        saved.push_back(entry);
+    }
+    return saved;
+}
+inline std::vector<uint8_t> EncodeModes(const std::vector<Saved>& saved) {
+    std::vector<uint8_t> bytes{kModesFormat};
+    for (const auto& entry : saved) {
+        for (size_t i = 0; i < 8; ++i)
+            bytes.push_back(static_cast<uint8_t>(entry.directory >> (8 * i)));
+        bytes.push_back(static_cast<uint8_t>(entry.mode));
+    }
+    return bytes;
+}
+// Each directory's mode in this catalog: order unless saved.
+inline std::vector<media::PlayMode> ModesFor(const media::MediaCatalog& catalog,
+                                             const std::vector<Saved>& saved) {
+    std::vector<media::PlayMode> modes;
+    for (const auto& collection : catalog.Collections()) {
+        modes.push_back(media::PlayMode::kOrder);
+        for (const auto& entry : saved)
+            if (entry.directory == collection.id.value)
+                modes.back() = entry.mode;
+    }
+    return modes;
+}
+
 // self.story.list: the directories, one directory's files, or a search. Every
 // word of the keyword must appear in the file's title or its directory's name.
+// modes (one per directory, or empty) adds what is not in order, and the
+// selected directory's mode.
 inline Reply List(const media::MediaCatalog& catalog, std::optional<std::pair<size_t, size_t>> now,
-                  std::string_view directory, std::string_view keyword, int page) {
+                  std::string_view directory, std::string_view keyword, int page,
+                  const std::vector<media::PlayMode>& modes = {}) {
+    const auto mode = [&modes](size_t d) {
+        return d < modes.size() ? modes[d] : media::PlayMode::kOrder;
+    };
     const auto& collections = catalog.Collections();
     std::optional<size_t> only;
     if (!directory.empty()) {
@@ -209,13 +281,18 @@ inline Reply List(const media::MediaCatalog& catalog, std::optional<std::pair<si
     for (size_t d = first; d < last; ++d) {
         out += d > first ? ",{\"name\":" : "{\"name\":";
         AppendString(out, Shorten(DirectoryName(collections[d])));
-        out += ",\"files\":" + std::to_string(collections[d].tracks.size()) + "}";
+        out += ",\"files\":" + std::to_string(collections[d].tracks.size());
+        if (mode(d) != media::PlayMode::kOrder)
+            out += std::string(",\"mode\":\"") + ModeName(mode(d)) + "\"";
+        out += "}";
     }
     out += "],\"page\":" + std::to_string(page) + ",\"pages\":" + std::to_string(pages);
     if (now && now->first < collections.size() && now->second >= 1 &&
         now->second <= collections[now->first].tracks.size()) {
         out += ",\"now\":";
         AppendFile(out, collections[now->first], now->second, true);
+        out.pop_back();
+        out += std::string(",\"mode\":\"") + ModeName(mode(now->first)) + "\"}";
     }
     return {true, out + "}"};
 }
@@ -245,8 +322,8 @@ inline Reply Check(const media::MediaCatalog& catalog, std::string_view director
     return {true, out + ",\"starts\":\"when you finish this answer\"}"};
 }
 
-// Shared by the player task (publishes, reports what is on, takes picks) and
-// the main task (the two tools).
+// Shared by the player task (publishes, reports what is on, takes picks and
+// modes) and the main task (the tools).
 class Card {
 public:
     static Card& Shared() {
@@ -258,7 +335,9 @@ public:
     void Publish(const media::MediaCatalog* catalog) {
         catalog_.store(catalog, std::memory_order_release);
     }
-    // The selected directory and 1-based file, from the player's tick.
+    bool Published() const { return catalog_.load(std::memory_order_acquire) != nullptr; }
+    // The selected directory and 1-based file, from the player's tick; a pick
+    // waiting for the end of the conversation counts as selected.
     void SetNow(std::optional<std::pair<size_t, size_t>> now) {
         const bool fits = now && now->first < 0xffff && now->second <= 0xffff;
         now_.store(fits ? static_cast<uint32_t>((now->first + 1) << 16 | now->second) : 0,
@@ -268,12 +347,8 @@ public:
         const auto* catalog = catalog_.load(std::memory_order_acquire);
         if (!catalog)
             return {false, kNoCard};
-        const uint32_t now = now_.load(std::memory_order_relaxed);
-        std::optional<std::pair<size_t, size_t>> selected;
-        if (now)
-            selected.emplace(static_cast<size_t>((now >> 16) - 1),
-                             static_cast<size_t>(now & 0xffff));
-        return card::List(*catalog, selected, directory, keyword, page);
+        std::lock_guard<std::mutex> lock(mutex_);
+        return card::List(*catalog, Now(), directory, keyword, page, ModesFor(*catalog, saved_));
     }
     // A later pick replaces one the player has not taken yet.
     Reply Play(std::string_view directory, int number) {
@@ -292,11 +367,78 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         return std::exchange(pending_, std::nullopt);
     }
+    // What NVS held at boot, before the player starts.
+    void LoadModes(const std::vector<uint8_t>& bytes) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        saved_ = DecodeModes(bytes);
+    }
+    std::vector<media::PlayMode> Modes(const media::MediaCatalog& catalog) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return ModesFor(catalog, saved_);
+    }
+    // self.story.set_play_mode. Without a name: the pick not taken yet, else the
+    // selected directory. On a change, bytes is what NVS should hold now.
+    Reply SetMode(std::string_view directory, std::string_view name, std::vector<uint8_t>& bytes) {
+        bytes.clear();
+        const auto* catalog = catalog_.load(std::memory_order_acquire);
+        if (!catalog)
+            return {false, kNoCard};
+        const auto mode = ParseMode(name);
+        if (!mode)
+            return {false, "mode must be order, loop, single or shuffle."};
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::optional<size_t> index;
+        if (!directory.empty())
+            index = FindDirectory(*catalog, directory);
+        else if (pending_)
+            index = pending_->directory;
+        else if (const auto now = Now())
+            index = now->first;
+        if (!index && !directory.empty())
+            return NoDirectory(*catalog, directory);
+        if (!index || *index >= catalog->Collections().size())
+            return {false, "Nothing is selected: name the directory."};
+        const auto& collection = catalog->Collections()[*index];
+        if (ModesFor(*catalog, saved_)[*index] != *mode) {
+            saved_.erase(std::remove_if(saved_.begin(), saved_.end(),
+                                        [&](const Saved& entry) {
+                                            return entry.directory == collection.id.value;
+                                        }),
+                         saved_.end());
+            if (*mode != media::PlayMode::kOrder)
+                saved_.push_back({collection.id.value, *mode});
+            if (saved_.size() > kMaxSaved)
+                saved_.erase(saved_.begin());
+            bytes = EncodeModes(saved_);
+            changed_ = true;
+        }
+        std::string out = "{\"directory\":";
+        AppendString(out, Shorten(DirectoryName(collection)));
+        return {true, out + ",\"mode\":\"" + ModeName(*mode) + "\"}"};
+    }
+    // The player's tick: every directory's mode, once after a change.
+    std::optional<std::vector<media::PlayMode>> TakeModes() {
+        const auto* catalog = catalog_.load(std::memory_order_acquire);
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!catalog || !std::exchange(changed_, false))
+            return std::nullopt;
+        return ModesFor(*catalog, saved_);
+    }
 
 private:
+    std::optional<std::pair<size_t, size_t>> Now() const {
+        const uint32_t now = now_.load(std::memory_order_relaxed);
+        if (!now)
+            return std::nullopt;
+        return std::make_pair(static_cast<size_t>((now >> 16) - 1),
+                              static_cast<size_t>(now & 0xffff));
+    }
+
     std::atomic<const media::MediaCatalog*> catalog_{nullptr};
     std::atomic<uint32_t> now_{0};
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::optional<Pick> pending_;
+    std::vector<Saved> saved_;
+    bool changed_ = false;
 };
 }  // namespace boilon::ai::card

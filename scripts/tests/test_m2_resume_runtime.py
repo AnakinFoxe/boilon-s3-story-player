@@ -81,6 +81,12 @@ class M2ResumeRuntimeTests(unittest.TestCase):
     def test_ai_pick_replaces_the_parked_story(self):
         self.scenario("ai_choose")
 
+    def test_play_modes_wrap_repeat_and_shuffle_from_zero(self):
+        self.scenario("modes")
+
+    def test_ai_pause_keeps_the_story_paused_five_seconds_back(self):
+        self.scenario("ai_stay_paused")
+
 
 if __name__ == "__main__":
     unittest.main()

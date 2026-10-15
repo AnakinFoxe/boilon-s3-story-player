@@ -185,6 +185,11 @@ int main() {
         return 1;
     }
     media::PlayerController player(std::move(built.catalog));
+    const auto& collections = player.Catalog().Collections();
+    size_t stories_index = 0;
+    while (stories_index < collections.size() && collections[stories_index].id != stories) {
+        ++stories_index;
+    }
     Show(player, "选择故事目录", player.SelectCollection(stories));
     Show(player, "开始播放", player.Play());
     Show(player, "暂停", player.Pause());
@@ -194,15 +199,14 @@ int main() {
     Show(player, "第1集结束", player.TrackFinished());
     Show(player, "第2集结束", player.TrackFinished());
     Show(player, "目录播完：默认停止", player.TrackFinished());
-    player.SetEndPolicy(media::EndPolicy::kRepeatCollection);
+    player.SetMode(stories_index, media::PlayMode::kLoop);
     Show(player, "重新播放最后一首", player.Play());
     Show(player, "目录播完：循环到第1集", player.TrackFinished());
     Show(player, "暂停", player.Pause());
     Show(player, "暂停时切到第2集", player.Next());
     Show(player, "从新曲开头开始（不是Resume）", player.Play());
     Show(player, "切换到未分类目录", player.SelectCollection(root));
-    Show(player, "播放音乐", player.Play());
-    player.SetEndPolicy(media::EndPolicy::kStop);
+    Show(player, "播放音乐", player.Play());  // 每个目录各有模式：未分类还是顺序播放。
     Show(player, "单曲目录结束", player.TrackFinished());
     DemonstrateGestures(player, stories);
     std::cout << "演示结束。真实音频、物理按键、NVS续播和固件集成尚未接入。\n";

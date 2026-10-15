@@ -33,6 +33,9 @@ inline Model PlayerModel(const local_library::PlayerView& view, uint64_t positio
     m.show_volume = view.volume_visible;
     m.seek_seconds = view.seek_seconds;
     m.seek_target_ms = position_ms;
+    static_assert(static_cast<int>(media::PlayMode::kShuffle) ==
+                  static_cast<int>(PlayMode::kShuffle));
+    m.mode = static_cast<PlayMode>(view.mode);
     if (view.offline_hint)
         m.toast = Toast::kAiOffline;
     return m;

@@ -67,6 +67,8 @@ public:
     }
     int Volume() const { return volume_; }
     const Session& Conversation() const { return session_; }
+    // 2026-10-15: 喵喵 was asked to power off; the conversation ends after her answer.
+    void EndAfterReply(uint64_t now_ms) { session_.EndAfterReply(now_ms); }
     // A double-click within the last 2 s found the AI not ready.
     bool Refused(uint64_t now_ms) const { return refused_ms_ && now_ms - *refused_ms_ < 2000; }
 

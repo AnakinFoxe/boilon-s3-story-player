@@ -70,6 +70,13 @@ BOILON_UI_ICON(kBack, ".....#....#", "....##...##", "...###..###", "..####.####"
                "....##...##", ".....#....#")
 BOILON_UI_ICON(kNote, "..###", "..#.#", "..#..", "..#..", "###..", "###..")
 BOILON_UI_ICON(kStar, ".#.", "###", ".#.")
+// Play modes (2026-10-15): loop, single and shuffle in the prototype.
+BOILON_UI_ICON(kRepeat, "......#..", "########.", "#.....#..", "#.......#", "..#.....#",
+               ".########", "..#......")
+BOILON_UI_ICON(kRepeatOne, "......#....", "########..#", "#.....#..##", "#.......#.#",
+               "..#.....#.#", ".########.#", "..#........")
+BOILON_UI_ICON(kShuffle, ".......#.", "##...####", "..#.#..#.", "...#.....", "..#.#..#.",
+               "##...####", ".......#.")
 #undef BOILON_UI_ICON
 
 inline int IconWidth(const Icon& icon) { return static_cast<int>(std::strlen(icon.rows[0])); }

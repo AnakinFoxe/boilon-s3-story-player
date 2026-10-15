@@ -292,8 +292,11 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
         # on a long top press. The page's rules live in a header without SDK
         # includes (test_m3_ai_device).
         no_story = source.split("[[noreturn]] void NoStory(", 1)[1].split("\n}\n", 1)[0]
-        self.assertEqual(no_story.count("PowerOff("), 1)
+        # A long top press, or (2026-10-15) 喵喵's power-off after her answer.
+        self.assertEqual(no_story.count("PowerOff("), 2)
         self.assertIn('if (tick.gesture == Action::kShutdownRequest)\n            PowerOff("USER");',
+                      no_story)
+        self.assertIn('if (power_off && !page.Conversation().Active())\n            PowerOff("USER");',
                       no_story)
         self.assertIn("StoryFocus focus(nullptr, audio);", no_story)
         self.assertIn("boilon::ai::RequestHotspot();", no_story)

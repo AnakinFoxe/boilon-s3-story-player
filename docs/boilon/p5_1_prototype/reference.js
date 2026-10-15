@@ -19,7 +19,7 @@ const canvas = () => ({ getContext: () => ({ createImageData: (w, h) => ({ data:
 function draw(c) {
   const px = new P.Px(canvas()), th = P.THEMES[c.palette];
   const d = { state: c.play, title: c.title, collection: c.collection, index: c.index, count: c.count, pos: c.pos,
-    dur: c.dur, vol: c.vol, bat: c.bat, ai: c.ai_ready ? 'ready' : 'offline' };
+    dur: c.dur, vol: c.vol, bat: c.bat, ai: c.ai_ready ? 'ready' : 'offline', mode: c.mode };
   const center = (icon, color, title, lines) => P.centerPage(px, th.bg, icon, color, 4, title, lines, th);
   switch (c.page) {
     case 'player':
@@ -109,7 +109,7 @@ function png(v, file, scale = 1, corners = false) {
 
 // The gallery's sections in order; a case joins one with "gallery" and "caption".
 const GALLERY = [
-  ['player-card', '播放页 · A 故事卡（默认）', '标题优先。状态栏、25 段进度条和时间行是 A、C 共用的；AI 就绪时右上角有喵喵头像。'],
+  ['player-card', '播放页 · A 故事卡（默认）', '标题优先。状态栏、25 段进度条和时间行是 A、C 共用的；AI 就绪时右上角有喵喵头像；不是顺序播放时状态栏有播放模式图标。'],
   ['player-cat', '播放页 · C 喵喵陪听', '喵喵戴着耳机陪着听，暂停、定位和播完各有样子。'],
   ['overlay', '覆盖提示与选择目录', '调音量、跳转和短提示叠在播放页上，过一会儿自动消失。'],
   ['system', '系统页', '只有本地故事和 AI 都用不了时才用整页。'],

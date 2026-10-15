@@ -32,6 +32,7 @@ struct PlayerView {
     int seek_seconds = 0;
     uint32_t directory_left_ms = 0;
     bool offline_hint = false;
+    media::PlayMode mode = media::PlayMode::kOrder;  // The selected directory's.
 };
 // Board-local polling adapter; storage effects belong to the optional ResumePort.
 template <typename Player>
@@ -306,11 +307,41 @@ public:
             restoring_ = resume_->Restore(id, media::ResumeMode::kSavedExact);
             return restoring_ || Fail();
         }
-        for (size_t i = 1; i < number; ++i)
-            controller_.Next();
-        if (number)
+        if (number) {
+            controller_.SelectTrack(number - 1);
             starting_offset_ = 0;
+        }
         return Submit(controller_.Play(), now_ms);
+    }
+    // How each directory goes on after a file (AI variant); see PlayerController.
+    void SetMode(size_t directory, media::PlayMode mode) { controller_.SetMode(directory, mode); }
+    void Seed(uint32_t seed) { controller_.Seed(seed); }
+    // The AI asked to pause outside a conversation: like the top key while playing,
+    // and a story another owner holds stays paused. False while switching, which
+    // changes nothing.
+    bool Pause(uint64_t now_ms) {
+        if (parked_) {
+            StayPaused();
+            return true;
+        }
+        if (!started_ || failed_ || controller_.State() != media::PlaybackState::kPlaying)
+            return true;
+        if (restoring_ || waiting_bookmark_ || bridge_.Pending())
+            return false;
+        Checkpoint(media::CheckpointReason::kPause, now_ms);
+        return Submit(controller_.Pause(), now_ms);
+    }
+    // The AI asked the story to stay paused when the conversation ends: a story
+    // parked while playing keeps its place, about five seconds back like Unpark.
+    void StayPaused() {
+        if (!parked_ || !park_playing_)
+            return;
+        park_playing_ = false;
+        if (const auto current = controller_.CurrentTrack()) {
+            const uint64_t heard = PositionMs();
+            seek_target_ = heard > 5000 ? heard - 5000 : 0;
+            Remember(current->track.id, *seek_target_);
+        }
     }
     // The selected directory's place in the directory list and the file's
     // 1-based place in it; nothing without a selection.
@@ -383,6 +414,7 @@ public:
                                                                             : S::kFinished;
         view.offline_hint = !view.failed && !view.directory_open && offline_hint_ &&
                             now_ms >= *offline_hint_ && now_ms - *offline_hint_ < 2000;
+        view.mode = controller_.Mode();
         return view;
     }
 
@@ -445,21 +477,21 @@ private:
         if (controller_.SelectCollection(plan.target->collection_id).status !=
             media::ControlStatus::kOk)
             return false;
-        for (size_t i = 0; i < 512; ++i) {
-            auto track = controller_.CurrentTrack();
-            if (track && track->track.id == plan.target->track.id) {
-                starting_offset_ = plan.position_ms;
-                Remember(track->track.id, plan.position_ms);
-                if (plan.volume_percent) {
-                    // Records from before the 2026-10 rescale may hold up to 200.
-                    volume_ = std::clamp(*plan.volume_percent, 0, local_player::kMaxVolume);
-                    if (restore_volume_)
-                        restore_volume_(volume_);
-                }
-                return true;
+        const auto& tracks =
+            controller_.Catalog().Collections()[*controller_.CollectionIndex()].tracks;
+        for (size_t i = 0; i < tracks.size(); ++i) {
+            if (tracks[i].id != plan.target->track.id)
+                continue;
+            controller_.SelectTrack(i);
+            starting_offset_ = plan.position_ms;
+            Remember(tracks[i].id, plan.position_ms);
+            if (plan.volume_percent) {
+                // Records from before the 2026-10 rescale may hold up to 200.
+                volume_ = std::clamp(*plan.volume_percent, 0, local_player::kMaxVolume);
+                if (restore_volume_)
+                    restore_volume_(volume_);
             }
-            if (controller_.Next().status != media::ControlStatus::kOk)
-                break;
+            return true;
         }
         return false;
     }
@@ -551,7 +583,7 @@ private:
         Notify("SKIP");
         card_failed_ = card_failed_ || player_.ReadFailed();
         if (++failed_files_ < kMaxFailedFiles)
-            return Submit(controller_.TrackFinished(), now_ms);
+            return Submit(controller_.TrackFailed(), now_ms);
         if (card_failed_)
             return Fail();
         // Bad files only: Play tries again from this one; any other action
@@ -573,6 +605,8 @@ private:
             explicit_seek_ = false;
             seek_duration_.reset();
             const auto current = controller_.CurrentTrack();
+            if (result.from_start)  // A shuffled or repeated file: never its bookmark.
+                starting_offset_ = 0;
             auto offset = std::exchange(starting_offset_, {});
             if (!offset && current)
                 offset = Remembered(current->track.id);

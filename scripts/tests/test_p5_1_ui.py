@@ -38,6 +38,7 @@ STAGE = {"connecting": "kConnecting", "listening": "kListening", "thinking": "kT
          "speaking": "kSpeaking", "returning": "kReturning"}
 FACE = {"happy": "kHappy", "surprised": "kSurprised", "sad": "kSad", "sleepy": "kSleepy",
         "thinking": "kThinking"}
+MODE = {"order": "kOrder", "loop": "kLoop", "single": "kSingle", "shuffle": "kShuffle"}
 
 
 def cpp_string(text):
@@ -72,6 +73,8 @@ def model_code(case):
         lines.append("m.seek_seconds = 0;")
     if "toast" in case:
         lines.append(f"m.toast = Toast::{TOAST[case['toast']]};")
+    if "mode" in case:
+        lines.append(f"m.mode = PlayMode::{MODE[case['mode']]};")
     for name, count in case.get("directories", []):
         lines.append(f"m.directories.push_back({{{cpp_string(name)}, {count}}});")
     if "ai" in case:
@@ -364,6 +367,12 @@ static uint64_t Pump(Refresh<FakePanel>& refresh, FakePanel& panel, uint64_t now
     assert(m.index == 2 && m.count == 24 && m.position_ms == 4000 && m.duration_ms == 9000);
     assert(m.volume == 35 && m.show_volume && m.seek_seconds == -60 && m.seek_target_ms == 4000);
     assert(m.toast == Toast::kAiOffline && m.battery == 100 && !m.ai_ready);
+    assert(m.mode == PlayMode::kOrder);
+    for (const auto mode : {media::PlayMode::kLoop, media::PlayMode::kSingle,
+                            media::PlayMode::kShuffle}) {
+        view.mode = mode;  // The directory's play mode, for the status bar.
+        assert(static_cast<int>(PlayerModel(view, 0, 50).mode) == static_cast<int>(mode));
+    }
     assert(PlayerModel(view, 0, -7).battery == -1);
     view.state = library::PlayerState::kFailed;
     assert(PlayerModel(view, 0, 50).play == Play::kError);

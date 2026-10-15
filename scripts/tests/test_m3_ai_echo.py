@@ -235,7 +235,9 @@ class M3AiEchoTests(unittest.TestCase):
         self.assertEqual(board.count('"self.story.set_barge_in"'), 1)
         self.assertNotIn("set_barge_in", (ROOT / "main/mcp_server.cc").read_text(encoding="utf-8"))
         self.assertIn("nvs_open(echo::kNamespace, NVS_READWRITE", board)
-        self.assertEqual(board.count("NVS_READWRITE"), 2)  # The identity and this byte.
+        # The identity, this byte and (2026-10-15) the play modes.
+        self.assertEqual(board.count("NVS_READWRITE"), 3)
+        self.assertIn("nvs_open(card::kModesNamespace, NVS_READWRITE", board)
         apply = board.split("void ApplyBargeIn() {", 1)[1].split("\n}\n", 1)[0]
         self.assertIn("Application::GetInstance().Schedule(", apply)
         self.assertIn("echo::ShouldSwitch(app.GetDeviceState() == kDeviceStateIdle", apply)

@@ -18,6 +18,8 @@ enum class Page : uint8_t {
 };
 enum class Play : uint8_t { kPlaying, kPaused, kLocating, kSwitching, kFinished, kError };
 enum class Toast : uint8_t { kNone, kAiOffline, kActivated, kHotspotRefused, kLowBattery };
+// The selected directory's play mode (2026-10-15), as media::PlayMode.
+enum class PlayMode : uint8_t { kOrder, kLoop, kSingle, kShuffle };
 enum class AiStage : uint8_t { kConnecting, kListening, kThinking, kSpeaking, kReturning };
 // The faces the server's emotion words map to, shown while speaking.
 enum class Face : uint8_t { kDefault, kHappy, kSurprised, kSad, kSleepy, kThinking };
@@ -34,6 +36,7 @@ struct Model {
     int seek_seconds = 0;  // nonzero shows the ±30 s panel
     uint64_t seek_target_ms = 0;
     Toast toast = Toast::kNone;
+    PlayMode mode = PlayMode::kOrder;  // an icon in the status bar unless in order
     std::vector<std::pair<std::string, size_t>> directories;  // name, files
     size_t highlighted = 0;
     uint32_t directory_left_ms = 0;
@@ -129,6 +132,10 @@ public:
         const auto& state = kStates[static_cast<int>(m.play)];
         DrawIcon(c_, *state.icon, 20 + (14 - IconWidth(*state.icon) * 2) / 2, 20, 2, state.color);
         Text(state.label, 42, 18, state.color, 110);
+        // After the widest label, clear of the AI badge even at 100%.
+        static constexpr const Icon* kModes[] = {nullptr, &kRepeat, &kRepeatOne, &kShuffle};
+        if (const Icon* mode = kModes[static_cast<int>(m.mode)])
+            DrawIcon(c_, *mode, 102, 20, 2, kSub);
         const int left = Battery({kBg, kText, kSub, kFaint, kGreen, kRed}, m.battery, 196, 21);
         if (m.ai_ready)
             DrawBadge(c_, left - 28, 18);

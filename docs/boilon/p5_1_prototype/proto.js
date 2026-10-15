@@ -185,6 +185,10 @@ const ICONS = {
   batt: ['#'],
   note: ['..###', '..#.#', '..#..', '..#..', '###..', '###..'],
   key: ['.###.', '#...#', '#.#.#', '#...#', '.###.'],
+  // Play modes (2026-10-15), in the status bar when not in order.
+  loop: ['......#..', '########.', '#.....#..', '#.......#', '..#.....#', '.########', '..#......'],
+  single: ['......#....', '########..#', '#.....#..##', '#.......#.#', '..#.....#.#', '.########.#', '..#........'],
+  shuffle: ['.......#.', '##...####', '..#.#..#.', '...#.....', '..#.#..#.', '##...####', '.......#.'],
 };
 function icon(px, name, x, y, s, color) { sprite(px, ICONS[name], { '#': color }, x, y, s); }
 function outlined(rows) {
@@ -368,6 +372,8 @@ const DEMO = {
   longCollection: '恐龙探险队：森林里很长很长的奇妙旅程',
   longTitle: '第10集：穿过星光闪烁的森林寻找失踪的朋友',
   dirs: [['恐龙探险队', 24], ['小猫系列', 12], ['睡前故事', 31], ['西游记', 108], ['未分类', 5], ['十万个为什么', 40]],
+  // A song collection for the play-mode pictures (2026-10-15).
+  song: { collection: '儿歌', title: '小星星', index: 5, count: 12, pos: 41, dur: 128 },
   // Subtitles: what the child said, and the sentence 喵喵 is speaking.
   heard: '喵喵，月亮为什么会跟着我走？',
   said: '因为月亮离我们特别远，你走路的时候，它看起来就像一直在原地陪着你。',
@@ -389,6 +395,8 @@ function topBar(px, th, d) {
   const [iw] = iconSize(st.icon, 2);
   icon(px, st.icon, 20 + (14 - iw) / 2, 20, 2, th[st.color]);
   text(px, st.label, 42, 18, { color: th[st.color], maxW: 110 });
+  // After the widest label, clear of the AI badge even at 100%.
+  if (d.mode && d.mode !== 'order') icon(px, d.mode, 102, 20, 2, th.sub);
   const left = battery(px, th, d.bat ?? DEMO.bat, 196, 21);
   if (d.ai === 'ready') badge(px, left - 28, 18);
 }
