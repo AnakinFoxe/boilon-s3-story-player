@@ -170,7 +170,7 @@ AI 变体开机挂上 SD 卡后、扫描之前，若卡的根目录有比自己�
 flash target 都会绕过 app-only 清理，同样不要用。
 
 刷写时不写 Bootloader、分区表、NVS 和 `assets`，不用 `idf.py flash`、`idf.py app-flash` 或 `@flash_args`：只把 app 写进一个
-OTA 槽，再写选中它的 `otadata`。构建可复现（`CONFIG_APP_REPRODUCIBLE_BUILD`）：同一份源码在 ARM 机器上（Mac，或 ARM 版的
-`espressif/idf:v6.0.2` 镜像）编出的固件逐字节一致；在 x86 机器上（例如 GitHub 的 CI）编出的，只有固件头里记录的 ELF
-哈希和随之变化的两个校验值不同，代码和数据相同。
+OTA 槽，再写选中它的 `otadata`。构建可复现（`CONFIG_APP_REPRODUCIBLE_BUILD`）：同一份源码、同一版 ESP-IDF，在 ARM 机器上
+（Mac，或 ARM 版的 `espressif/idf:v6.1` 镜像）编出的固件逐字节一致；在 x86 机器上（例如 GitHub 的 CI）编出的，只有固件头里
+记录的 ELF 哈希和随之变化的两个校验值不同，代码和数据相同。
 [`scripts/boilon/local_ci.sh`](../../../scripts/boilon/local_ci.sh) 在本机的 Docker 里照 CI 的步骤跑一遍。

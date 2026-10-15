@@ -4,7 +4,7 @@
 
 XiaoZhi is an ESP-IDF C/C++ voice-assistant firmware supporting many chips, boards, displays, audio devices, and network transports. A build selects exactly one board implementation.
 
-Use ESP-IDF v6.0.2 for this fork. Upstream v2.5.2 supports SDK 6.0.1 or newer; adopting its 6.1 CI image is deferred until a separately validated SDK migration.
+Use ESP-IDF v6.1 when possible. The minimum supported SDK is ESP-IDF v6.0.1. IDF 5.x is not supported.
 
 ## Architecture
 
@@ -43,6 +43,7 @@ Read the closest existing implementation before adding a new one. Prefer the nar
 This fork adds an unofficial firmware for the BOILON S3 Gen2 story player in `main/boards/boilon-s3-gen2/`, `main/media/` and `docs/boilon/`. It is a personal project.
 
 - Everything pushed to this public repository is published at once and cannot be taken back: files, commit messages, pull request descriptions, issues and comments. Never write personal or family details, local absolute paths, device identities (MAC addresses, USB serial numbers), Wi-Fi credentials, tokens, flash or NVS images, eFuse reports or unredacted serial logs into any of them.
+- Boilon releases are built with ESP-IDF v6.1 (from boilon-ai-player v1.2.1; v1.2.0 used v6.0.2), the image in `.github/workflows/build.yml` and `boilon-release.yml`. A new SDK version changes every firmware byte; validate it on the device before releasing with it.
 - Upstream changes arrive by merging formal upstream release tags. Prefer Boilon-owned files; keep edits to upstream-owned files small, generic and guarded, and name the upstream files a change touches.
 - Device actions (USB, serial port, flash, recovery) need the owner's explicit authorization each time; a passing build or test suite never grants it. Stop at the first anomaly and do not retry automatically.
 - For non-trivial work, keep the current plan in `docs/boilon/CURRENT_MILESTONE.md` and deferred items in `docs/boilon/BACKLOG.md`. Create them only when needed.

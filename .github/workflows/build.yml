@@ -27,7 +27,7 @@ jobs:
     name: Test build tooling
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:v6.0.2
+      image: espressif/idf:v6.1
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -89,7 +89,7 @@ jobs:
           - boilon-s3-gen2-ai
     runs-on: ubuntu-latest
     container:
-      image: espressif/idf:v6.0.2
+      image: espressif/idf:v6.1
     steps:
       - name: Checkout
         uses: actions/checkout@v7

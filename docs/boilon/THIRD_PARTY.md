@@ -14,6 +14,11 @@ grep -oE '[^ /()]+\.a\(' build/xiaozhi.map | sed 's/($//' | sort -u
 2026-10-14 同步上游 v2.5.2 后，用 v1.2.0 的构建按这个方法重新核对：两个变体链接的库与之前完全相同（139／75）；随上游升级的
 4 个组件（esp-ml307 3.7.5、uart-eth-modem 0.7.0、uart-uhci 0.4.0、button 4.2.2）许可证不变。
 
+2026-10-15 换到 ESP-IDF v6.1 后，用 v1.2.1 的构建再核对一次：两个变体各多链接一个 `libesp_hal_systimer.a`，变成 140／76。
+它是乐鑫自己的系统定时器驱动（Apache-2.0），6.0.2 里编在 `libhal.a` 里，6.1 拆成了单独的组件；其余的库不变，组件管理器
+下载的组件版本也不变，下表的第三方部分不变。6.1 的 `COPYRIGHT.rst` 多了蓝牙 LE Audio 与 ISO 两条（改编自 Zephyr），本固件
+没有链接蓝牙协议栈，不含这两部分。
+
 ## 本项目与上游
 
 | 部分 | 来源 | 许可证 |
@@ -28,7 +33,7 @@ grep -oE '[^ /()]+\.a\(' build/xiaozhi.map | sed 's/($//' | sort -u
 | Noto Sans CJK，14 px 单色常用字 6845 个 | `m2_library_common_font.inc`，两个变体 | 78/xiaozhi-fonts 2.0.0（[78/noto-fonts](https://github.com/78/noto-fonts)） | SIL Open Font License 1.1（组件代码 Apache-2.0） |
 | unscii-8 | `p5_1_ui_font.h`，由 LVGL 源码生成 | LVGL 自带 | 公有领域 |
 
-## ESP-IDF v6.0.2
+## ESP-IDF v6.1
 
 ESP-IDF 本身是 Apache-2.0。其中编进固件的第三方部分：
 

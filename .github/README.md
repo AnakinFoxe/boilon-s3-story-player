@@ -41,8 +41,8 @@ xiaozhi.me 的智能体里设置。
 
 ## 自己编译
 
-- ESP-IDF v6.0.2。上游最低要求 v6.0.1、推荐 v6.1；本仓库发布的固件都用 v6.0.2 编译并在设备上验证过，
-  换版本要重新验证，暂不换。
+- ESP-IDF v6.1（上游最低要求 v6.0.1、推荐 v6.1）。本仓库发布的固件从 v1.2.1 起用 v6.1 编译（v1.2.0 用 v6.0.2），
+  都在设备上验证过；用别的 IDF 版本编出的固件没有验证过。
 - AI 变体：`python3 scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-ai`；只离线：把名字换成
   `boilon-s3-gen2-local-library`。产物是 `build/xiaozhi.bin`。构建可复现：ARM 机器上编出的文件逐字节
   一致；x86 机器（如 GitHub 的 CI）编出的只差固件头里的 ELF 哈希和两个校验值。
