@@ -401,7 +401,7 @@ int main() {
         config = (ROOT / "main/Kconfig.projbuild").read_text()
         match = re.search(r"(?m)^config FIRMWARE_UPGRADE_ENABLED\n(?:(?:[ \t].*|)\n)*", config)
         self.assertIsNotNone(match)
-        sdk_python = "idf-tools-v6.0.2/python_env/idf6.0_py3.12_env/bin/python"
+        sdk_python = "idf-tools-v6.1/python_env/idf6.1_py3.12_env/bin/python"
         interpreters = [ROOT / ".tools" / sdk_python,
                         ROOT.parent / "boilon-s3-story-player/.tools" / sdk_python]
         if os.environ.get("BOILON_TEST_IDF_PYTHON"):
