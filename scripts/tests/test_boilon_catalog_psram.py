@@ -2,7 +2,9 @@
 
 Heap placement cannot be measured on the host, so this checks the production
 wiring: two short windows (the scan, the resume worker's copies) lower the
-malloc internal limit and restore it before anything else runs.
+malloc internal limit and restore it before anything else runs. Since
+2026-10-15 the AI variant also restarts the minimum-free count at app_main, so
+its "minimal sram" log line includes ESP-IDF 6.1's DMA pool again.
 """
 
 import json
@@ -49,6 +51,15 @@ class CatalogPsramTests(unittest.TestCase):
         for build in config["builds"]:
             with self.subTest(build=build["name"]):
                 self.assertIn("CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=2048", build["sdkconfig_append"])
+
+    def test_ai_variant_counts_the_dma_pool_in_minimal_sram(self):
+        source = (BOARD / "m3_ai_main.cc").read_text(encoding="utf-8")
+        main = source.split('extern "C" void app_main() {', 1)[1]
+        call = "    heap_caps_monitor_local_minimum_free_size_start();\n"
+        self.assertEqual(source.count(call), 1)
+        # After the power latch and the amplifier, before anything allocates.
+        self.assertLess(main.index('"PA_DIRECTION");'), main.index(call))
+        self.assertLess(main.index(call), main.index("xTaskCreate("))
 
 
 if __name__ == "__main__":

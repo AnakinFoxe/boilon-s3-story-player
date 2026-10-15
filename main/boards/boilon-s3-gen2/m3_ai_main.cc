@@ -771,6 +771,11 @@ extern "C" void app_main() {
     Check(gpio_reset_pin(GPIO_NUM_42), "PA_RESET");
     Check(gpio_set_level(GPIO_NUM_42, 0), "PA_PRELOAD");
     Check(gpio_set_direction(GPIO_NUM_42, GPIO_MODE_OUTPUT), "PA_DIRECTION");
+    // ESP-IDF 6.1 adds the internal DMA pool (SPIRAM_MALLOC_RESERVE_INTERNAL)
+    // after its startup and counts that pool's minimum as zero, so "minimal
+    // sram" read about 95 KB low. Count every internal heap from here, as 6.0
+    // did; only the statistic changes.
+    heap_caps_monitor_local_minimum_free_size_start();
     if (xTaskCreate(
             [](void*) {
                 while (true) {
