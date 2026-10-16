@@ -399,6 +399,40 @@ void Forgets() {
     assert(card.ForgetProgress("", true, false).text == kNoCard && !card.TakeForget());
 }
 
+// 2026-10-16: names said without their book-title marks, and errors upstream
+// can carry: it puts the text into its JSON unescaped.
+void LooseNames() {
+    media::MediaCatalogBuilder builder("loose");
+    for (const char* directory : {"凯叔《西游记》", "凯叔《三国演义》", "凯叔睡前故事", "外国童话", "《》"})
+        assert(builder.Add({directory, "01 故事.mp3", 1000, 1}) == media::AddResult::kAdded);
+    auto built = builder.Finish();
+    assert(built.Ok());
+    const auto& catalog = built.catalog;
+    const auto xiyou = Index(catalog, "凯叔《西游记》");
+    assert(Loose("凯叔《西游记》") == "凯叔西游记");
+    assert(Loose("a b-c（d）\xE3\x80\x80" "e.mp3") == "abcdemp3");
+    assert(FindDirectory(catalog, "凯叔西游记") == xiyou);
+    assert(FindDirectory(catalog, "凯叔 西游记") == xiyou && FindDirectory(catalog, "凯叔《西游记") == xiyou);
+    assert(FindDirectory(catalog, "西游记") == xiyou);  // Found before marks are left out.
+    assert(FindDirectory(catalog, "三国演义") == Index(catalog, "凯叔《三国演义》"));
+    assert(!FindDirectory(catalog, "凯叔"));  // Three contain it: still ambiguous.
+    assert(!FindDirectory(catalog, "红楼梦"));  // 《》 has nothing left to match with.
+    assert(FindDirectory(catalog, "《》") == Index(catalog, "《》") && !FindDirectory(catalog, "“”"));
+    Card card;
+    card.Publish(&catalog);
+    assert(card.Play("凯叔西游记", 1).ok && card.Take()->directory == xiyou);
+    assert(Has(card.ForgetProgress("凯叔西游记", false, false).text, R"("ask":"凯叔《西游记》")"));
+    auto reply = card.Play("红楼\"梦\\\n", 1);
+    assert(!reply.ok && Has(reply.text, "\""));
+    const auto text = ErrorText(reply.text);
+    assert(text.find('"') == std::string::npos && text.find('\\') == std::string::npos);
+    assert(std::none_of(text.begin(), text.end(),
+                        [](char c) { return static_cast<unsigned char>(c) < 0x20; }));
+    assert(Has(text, "No single directory matches '红楼'梦/ '. Directories: '《》' '凯叔《三国演义》' "
+                     "'凯叔《西游记》' '凯叔睡前故事' '外国童话'."));
+    assert(ErrorText("a\"b\\c\nd\te") == "a'b/c d e" && ErrorText("凯叔《西游记》") == "凯叔《西游记》");
+}
+
 // The most a card may hold, with long names: every reply stays near 4 KB.
 void Bounded() {
     media::MediaCatalogBuilder builder("full");
@@ -453,6 +487,7 @@ int main() {
     Picks();
     Modes();
     Forgets();
+    LooseNames();
     Bounded();
 }
 '''
@@ -562,6 +597,13 @@ class M3AiLibraryHostTests(unittest.TestCase):
                         forget.index("session.EndAfterReply(NowMs());"))
         self.assertLess(forget.index("session.EndAfterReply(NowMs());"),
                         forget.index("forgetting.reset();"))
+        # 2026-10-16: upstream puts an error's text into its JSON unescaped, so
+        # every card reply's error goes through ErrorText, and fixed errors hold
+        # no double quote.
+        self.assertEqual(board.count("std::unexpected(reply.text)"), 0)
+        self.assertEqual(board.count("std::unexpected(boilon::ai::card::ErrorText(reply.text))"), 4)
+        for error in re.findall(r"std::unexpected\((.*?)\);", board, re.S):
+            self.assertNotIn('\\"', error)
         # The previous key no longer restarts the current file first.
         previous = runtime.split("case media::GestureAction::kPreviousTrack:", 1)[1]
         self.assertNotIn("RestartAt", previous.split("default:", 1)[0])

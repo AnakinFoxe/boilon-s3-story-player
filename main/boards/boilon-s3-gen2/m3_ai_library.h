@@ -107,27 +107,68 @@ inline std::vector<std::string> Words(std::string_view text) {
         words.pop_back();
     return words;
 }
+// The text without book-title marks, quotes, brackets, separators and spaces,
+// which a spoken name leaves out (2026-10-16: 凯叔西游记 for 凯叔《西游记》).
+inline std::string Loose(std::string_view text) {
+    constexpr std::string_view kMarks =
+        " \"'()[]-_.,:!?《》〈〉「」『』“”‘’（）【】·・，、。：！？\xE3\x80\x80";
+    std::string out;
+    for (size_t i = 0; i < text.size();) {  // One whole UTF-8 character at a time.
+        const auto lead = static_cast<unsigned char>(text[i]);
+        const size_t length = lead < 0x80 ? 1 : lead >> 5 == 6 ? 2 : lead >> 4 == 14 ? 3 : 4;
+        const auto character = text.substr(i, length);
+        if (kMarks.find(character) == std::string_view::npos)
+            out += character;
+        i += length;
+    }
+    return out;
+}
 // The directory the model named: the same name, else the only one that
-// contains the name or that the name contains. A name these replies shortened
-// still works: its "…" is dropped.
+// contains the name or that the name contains; when none does, the same again
+// without marks and spaces (Loose). A name these replies shortened still
+// works: its "…" is dropped.
 inline std::optional<size_t> FindDirectory(const media::MediaCatalog& catalog,
                                            std::string_view name) {
     if (name.size() > kCut.size() && name.substr(name.size() - kCut.size()) == kCut)
         name.remove_suffix(kCut.size());
     const auto& collections = catalog.Collections();
-    for (size_t i = 0; i < collections.size(); ++i)
-        if (Same(DirectoryName(collections[i]), name))
-            return i;
-    std::optional<size_t> found;
-    for (size_t i = 0; i < collections.size() && !name.empty(); ++i) {
-        const auto directory = DirectoryName(collections[i]);
-        if (!Contains(directory, name) && !Contains(name, directory))
-            continue;
-        if (found)
+    for (const bool loose : {false, true}) {
+        const auto wanted = loose ? Loose(name) : std::string(name);
+        if (loose && wanted.empty())
+            break;
+        const auto named = [&](size_t i) {
+            const auto directory = DirectoryName(collections[i]);
+            return loose ? Loose(directory) : directory;
+        };
+        for (size_t i = 0; i < collections.size(); ++i)
+            if (Same(named(i), wanted))
+                return i;
+        std::optional<size_t> found;
+        size_t matches = 0;
+        for (size_t i = 0; i < collections.size() && !wanted.empty(); ++i) {
+            const auto directory = named(i);
+            if (!directory.empty() &&
+                (Contains(directory, wanted) || Contains(wanted, directory))) {
+                found = i;
+                ++matches;
+            }
+        }
+        if (matches == 1)
+            return found;
+        if (matches > 1)
             return std::nullopt;
-        found = i;
     }
-    return found;
+    return std::nullopt;
+}
+// Upstream puts an error's text into the JSON it sends as it is
+// (McpServer::ReplyError); a double quote there made the server drop the
+// connection and the conversation hung (2026-10-16). Errors keep to
+// characters that need no escaping.
+inline std::string ErrorText(std::string_view text) {
+    std::string out;
+    for (const char c : text)
+        out += c == '"' ? '\'' : c == '\\' ? '/' : static_cast<unsigned char>(c) < 0x20 ? ' ' : c;
+    return out;
 }
 inline Reply NoDirectory(const media::MediaCatalog& catalog, std::string_view name) {
     const auto& collections = catalog.Collections();

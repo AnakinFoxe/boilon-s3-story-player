@@ -338,7 +338,7 @@ public:
                     properties["directory"].value<std::string>(),
                     properties["keyword"].value<std::string>(), properties["page"].value<int>());
                 if (!reply.ok)
-                    return std::unexpected(reply.text);
+                    return std::unexpected(boilon::ai::card::ErrorText(reply.text));
                 return reply.text;
             });
         McpServer::GetInstance().AddTool(
@@ -361,7 +361,7 @@ public:
                     properties["number"].value<int>());
                 ESP_LOGI(kTag, "Play request %s", reply.ok ? "accepted" : "refused");
                 if (!reply.ok)
-                    return std::unexpected(reply.text);
+                    return std::unexpected(boilon::ai::card::ErrorText(reply.text));
                 return reply.text;
             });
         AddPlayerTools();
@@ -429,7 +429,7 @@ private:
                     properties["directory"].value<std::string>(),
                     properties["mode"].value<std::string>(), bytes);
                 if (!reply.ok)
-                    return std::unexpected(reply.text);
+                    return std::unexpected(boilon::ai::card::ErrorText(reply.text));
                 ESP_LOGI(kTag, "Play mode %s, saved=%d",
                          properties["mode"].value<std::string>().c_str(),
                          bytes.empty() ? -1 : SavePlayModes(bytes));
@@ -488,7 +488,7 @@ private:
                          : confirmed ? "accepted"
                                      : "asked");
                 if (!reply.ok)
-                    return std::unexpected(reply.text);
+                    return std::unexpected(boilon::ai::card::ErrorText(reply.text));
                 return reply.text;
             });
     }
