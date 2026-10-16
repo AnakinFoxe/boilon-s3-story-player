@@ -95,21 +95,6 @@ activity; the engine refactor does not change that policy.
 
 ## Local MP3 producer (Boilon)
 
-`InitializePlaybackOnly(codec)` is a fresh-instance opt-in for PCM-only players.
-It creates the normal power timer and starts the caller's Codec, but does not
-construct an input engine, input resampler or Opus codecs. On success, call
-`Start()` once: only the existing `AudioOutputTask` is created. Timer/task startup
-failure leaves the service stopped, so `BeginLocalPlayback()` returns zero.
-`Stop()` is terminal in this mode, including before Start; a failed initialization
-attempt that selected this mode cannot be retried or switched to voice mode.
-The Codec, service and worker must retain their normal lifetime relationship;
-initialization and Start/Stop are single-owner operations, not concurrent calls.
-
-This mode accepts local PCM only. Opus packets, OGG sounds, input reads and audio
-testing do not start input/output side effects; wake/VAD remain unavailable with
-no input engine. Existing `Initialize(codec)` users keep the normal voice engine
-and three-task pipeline. No board-specific conditions are added to AudioService.
-
 `LocalMp3Player` reads an already-resolved file in one cancellable worker, decodes
 with the pinned ESP Simple Decoder, downmixes/resamples and submits <=960-sample
 PCM blocks to the existing two-entry playback queue. It never writes the codec.
@@ -118,9 +103,9 @@ protocol input is rejected until that session ends. Pause retains queued frames;
 stop/reset invalidates old frames. One already in-flight codec block may finish.
 Controls are single-owner and nonblocking; AudioService must outlive the player
 and worker. The Boilon AI variant's story player uses the local session beside
-XiaoZhi on the normal voice-mode service. `InitializePlaybackOnly()` has had no
-caller since the offline-only local-library variant was retired after v1.4.0. See
-the [board README](../boards/boilon-s3-gen2/README.md) for the player's behavior.
+XiaoZhi on the normal voice-mode service; no board-specific conditions are added
+to AudioService. See the [board README](../boards/boilon-s3-gen2/README.md) for
+the player's behavior.
 
 A file named `.wav` skips the decoder: it is read as PCM WAV (`main/media/wav_format.h`:
 8-32-bit integer or 32-bit float, mono or stereo, 8-48 kHz), and other WAV encodings

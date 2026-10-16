@@ -297,8 +297,6 @@ private:
         adc.mic_selected = ES7210_SEL_MIC1 | ES7210_SEL_MIC2 | ES7210_SEL_MIC3 | ES7210_SEL_MIC4;
         adc.mclk_div = 256;
         mic_ = adc.ctrl_if ? es7210_codec_new(&adc) : nullptr;
-#else
-        mic_ = nullptr;  // local-library never asks for it: keep the ES7210 driver out.
 #endif
         esp_codec_dev_sample_info_t format = {};
         format.bits_per_sample = 16;

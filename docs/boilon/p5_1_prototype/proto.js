@@ -371,6 +371,11 @@ const DEMO = {
   pos: 402, dur: 1085, vol: 60, bat: 87,
   longCollection: '恐龙探险队：森林里很长很长的奇妙旅程',
   longTitle: '第10集：穿过星光闪烁的森林寻找失踪的朋友',
+  // Fitted titles (2026-10-16): longer and longer names, an English one, one past 18 px.
+  fitTitles: ['第23回：孙悟空三打白骨精，唐僧误会把他赶走了', '十万个为什么：为什么天空是蓝色的，而傍晚的晚霞却是红色的呢',
+    '第8集：小兔子和小松鼠一起去森林深处寻找会发光的蘑菇，路上遇到了一只迷路的小乌龟'],
+  enTitle: 'The Little Red Hen S01E05 - Who Will Bake the Bread',
+  longestTitle: '【睡前故事】小熊阿布和他的好朋友们：大森林里的春天、夏天、秋天和冬天，一年四季都有好玩的事情发生，小猪、小鹿和小狐狸都来了，大家一起过了快乐的一年',
   dirs: [['恐龙探险队', 24], ['小猫系列', 12], ['睡前故事', 31], ['西游记', 108], ['未分类', 5], ['十万个为什么', 40]],
   // A song collection for the play-mode pictures (2026-10-15).
   song: { collection: '儿歌', title: '小星星', index: 5, count: 12, pos: 41, dur: 128 },
@@ -414,6 +419,126 @@ function timeRow(px, th, d, y) {
 }
 function displayTitle(name) { return name.replace(/\.(mp3|wav)$/i, ''); }
 
+// ---------- fitted title (2026-10-16) ----------
+// Layout A's title uses the biggest size from 28 px (the old 2x) down to 18 px that
+// shows it whole, else 18 px with an ellipsis. A size is the advance of a Chinese
+// character; every 14 px measure scales by A/14, rounded.
+const TITLE = { w: 182, h: 108, max: 28, min: 18, bold: 21 };
+const titleScale = (v, A) => Math.floor((v * A + 7) / 14);
+const titlePitch = (A) => Math.max(A + 4, 20);
+function titleLines(A) { let n = 1; while (n * titlePitch(A) + A + 2 <= TITLE.h) n++; return n; }
+const titleAdv = (ch, A) => titleScale(glyph(NOTO, ch).adv, A);
+function titleWidth(chars, A) { let w = 0; for (const ch of chars) w += titleAdv(ch, A); return w; }
+// No line starts with a closing mark or ends with an opening one, and ASCII letters
+// and digits stay together; spaces where a line breaks are dropped.
+const NO_START = new Set([...'，。、；：！？）》」』】〉〕”’…·,.;:!?)]}%']);
+const NO_END = new Set([...'（《「『【〈〔“‘([{']);
+const TRIM = new Set([...' ，、。；：,.;:', ...NO_END]);
+const isWord = (ch) => /^[A-Za-z0-9'_]$/.test(ch);
+const canBreak = (a, b) => !NO_START.has(b) && !NO_END.has(a) && !(isWord(a) && isWord(b));
+function trimLine(line) { while (line.length > 1 && line[line.length - 1] === ' ') line.pop(); return line; }
+// A character that does not fit starts a new line, with whatever must stay with it.
+// Past `lines` lines the last one ends with an ellipsis; a last line of one character
+// takes the previous line's last character or word.
+function titleWrap(str, A, lines) {
+  const out = [];
+  let cur = [], w = 0;
+  for (const ch of str) {
+    const a = titleAdv(ch, A);
+    if (cur.length && w + a > TITLE.w) {
+      let at = cur.length;
+      if (!canBreak(cur[at - 1], ch)) {
+        at--;
+        while (at > 0 && !canBreak(cur[at - 1], cur[at])) at--;
+        if (at === 0 || titleWidth(cur.slice(at), A) + a > TITLE.w) at = cur.length;
+      }
+      const rest = cur.splice(at);
+      out.push(trimLine(cur));
+      while (rest.length && rest[0] === ' ') rest.shift();
+      cur = rest;
+      w = titleWidth(cur, A);
+      if (!cur.length && ch === ' ') continue;
+    }
+    cur.push(ch);
+    w += a;
+  }
+  if (cur.length) out.push(cur);
+  if (out.length > lines) {
+    out.length = lines;
+    const last = out[lines - 1];
+    while (last.length && (titleWidth(last, A) + titleAdv('…', A) > TITLE.w || TRIM.has(last[last.length - 1]))) last.pop();
+    last.push('…');
+    return { lines: out, cut: true };
+  }
+  const n = out.length;
+  if (n > 1 && out[n - 1].length === 1) {
+    const prev = out[n - 2];
+    let k = prev.length - 1;
+    while (k > 0 && !canBreak(prev[k - 1], prev[k])) k--;
+    const moved = prev.slice(k).concat(out[n - 1]);
+    while (moved.length && moved[0] === ' ') moved.shift();
+    if (k > 0 && titleWidth(moved, A) <= TITLE.w) { out[n - 2] = trimLine(prev.slice(0, k)); out[n - 1] = moved; }
+  }
+  return { lines: out, cut: false };
+}
+function titleFit(str) {
+  for (let A = TITLE.max; ; A--) {
+    const t = titleWrap(str, A, titleLines(A));
+    if (!t.cut || A === TITLE.min) return { A, lines: t.lines };
+  }
+}
+// Which of n source pixels draw 2 px wide so that together they cover m (n <= m <= 2n):
+// the cheapest set, every boundary less than 1 px from its exact place and boundary
+// `pin` at its nearest. Returns where each source pixel starts (n + 1 values).
+function titleStretch(cost, n, m, pin) {
+  const d = m - n, INF = 1e9, pick = [];
+  let best = new Array(d + 1).fill(INF);
+  best[0] = 0;
+  for (let c = 0; c < n; c++) {
+    const next = new Array(d + 1).fill(INF), took = new Array(d + 1).fill(0);
+    for (let k = 0; k <= d; k++)
+      for (let two = 0; two < 2 && best[k] < INF && k + two <= d; two++) {
+        const off = Math.abs(n * (c + 1 + k + two) - (c + 1) * m);
+        if (c + 1 === pin ? 2 * off > n : off >= n) continue;
+        const v = best[k] + two * cost[c] * 1000 + off;
+        if (v < next[k + two]) { next[k + two] = v; took[k + two] = two; }
+      }
+    pick.push(took);
+    best = next;
+  }
+  const start = new Array(n + 1);
+  start[n] = m;
+  for (let c = n - 1, k = d; c >= 0; c--) { start[c] = start[c + 1] - 1 - pick[c][k]; k -= pick[c][k]; }
+  return start;
+}
+// A 14 px glyph at size A: some columns and rows draw 2 px wide. From TITLE.bold up the
+// ones a stroke runs along go first (2 px strokes, like the old 2x); below it the empty
+// ones (1 px strokes, like 1x). The baseline row stays where the line puts it.
+function titleGlyph(px, g, x, top, A, color) {
+  const y0 = NOTO.lh - NOTO.base - g.h - g.y;
+  const ink = (c, r) => { c -= g.x; r -= y0; return c >= 0 && c < g.w && r >= 0 && r < g.h && g.bits[r * g.w + c] === 1; };
+  const c0 = Math.min(0, g.x), c1 = Math.max(g.adv, g.x + g.w), r0 = Math.min(0, y0), r1 = Math.max(NOTO.lh, y0 + g.h);
+  const costX = [], costY = [];
+  for (let c = c0; c < c1; c++) {
+    let k = 0;
+    for (let r = r0; r < r1; r++) if (ink(c, r) && !ink(c - 1, r) && !ink(c + 1, r)) k++;
+    costX.push(k);
+  }
+  for (let r = r0; r < r1; r++) {
+    let k = 0;
+    for (let c = c0; c < c1; c++) if (ink(c, r) && !ink(c, r - 1) && !ink(c, r + 1)) k++;
+    costY.push(k);
+  }
+  if (A >= TITLE.bold)
+    for (const cost of [costX, costY]) { const most = Math.max(...cost); cost.forEach((v, i) => { cost[i] = most - v; }); }
+  const sx = titleStretch(costX, c1 - c0, titleScale(c1, A) - titleScale(c0, A), -1);
+  const sy = titleStretch(costY, r1 - r0, titleScale(r1, A) - titleScale(r0, A), NOTO.lh - NOTO.base - r0);
+  const ox = x + titleScale(c0, A), oy = top + titleScale(r0, A);
+  for (let r = r0; r < r1; r++)
+    for (let c = c0; c < c1; c++)
+      if (ink(c, r)) px.rect(ox + sx[c - c0], oy + sy[r - r0], sx[c - c0 + 1] - sx[c - c0], sy[r - r0 + 1] - sy[r - r0], color);
+}
+
 // Layout A: the story card, text first.
 function playerBook(px, th, d, t) {
   px.clear(th.bg);
@@ -425,11 +550,12 @@ function playerBook(px, th, d, t) {
   text(px, idx, cx + cw - 12, cy + 10, { color: th.sub, align: 'right' });
   text(px, d.collection, cx + 36, cy + 10, { color: th.sub, maxW: cw - 60 - measure(idx) });
   px.dash(cx + 12, cy + 36, cw - 24, th.faint);
-  const title = displayTitle(d.title);
-  const big = layout(title, { s: 2, maxW: cw - 24, lines: 9 }).length <= 3;
-  const to = big ? { s: 2, maxW: cw - 24, lines: 3, lh: 32, color: th.text } : { maxW: cw - 24, lines: 5, lh: 20, color: th.text };
-  const n = layout(title, to).length, block = (n - 1) * to.lh + (big ? 30 : 16);
-  text(px, title, cx + 12, cy + 40 + Math.max(0, (ch - 48 - block) >> 1), to);
+  const fit = titleFit(displayTitle(d.title)), pitch = titlePitch(fit.A);
+  const block = (fit.lines.length - 1) * pitch + fit.A + 2, top = cy + 40 + Math.max(0, (ch - 48 - block) >> 1);
+  fit.lines.forEach((line, i) => {
+    let x = cx + 12;
+    for (const c of line) { titleGlyph(px, glyph(NOTO, c), x, top + i * pitch, fit.A, th.text); x += titleAdv(c, fit.A); }
+  });
   progress(px, th, 20, 216, 200, d.dur ? d.pos / d.dur : 0);
   timeRow(px, th, d, 236);
 }
@@ -693,14 +819,20 @@ function currentScreen(px) {
 // ---------- screen catalog ----------
 const P = (over) => ({ ...DEMO, ai: 'ready', ...over });
 const SCREENS = [
-  { sec: 'player', id: 'play', name: '播放中', note: '默认页。标题按长度自动用 2 倍或 1 倍字。', anim: true,
+  { sec: 'player', id: 'play', name: '播放中', note: '默认页。标题先用 28 px，放不下就 1 px 一档往下缩，最小 18 px。', anim: true,
     draw: (px, S, t) => LAYOUTS[S.layout](px, THEMES[S.theme], P({ state: 'playing' }), t) },
   { sec: 'player', id: 'pause', name: '已暂停', note: '状态行变琥珀色；卡带停转。', anim: true,
     draw: (px, S, t) => LAYOUTS[S.layout](px, THEMES[S.theme], P({ state: 'paused' }), t) },
   { sec: 'player', id: 'locate', name: '开机续播定位中', note: '对应 F01：有实际输出之前如实显示「正在定位」。', anim: true,
     draw: (px, S, t) => LAYOUTS[S.layout](px, THEMES[S.theme], P({ state: 'locating' }), t) },
-  { sec: 'player', id: 'long', name: '长目录名和长标题', note: '目录名单行省略；长标题自动改用 1 倍字。', anim: true,
+  { sec: 'player', id: 'long', name: '长目录名和长标题', note: '目录名单行省略；21 个字的标题缩到 26 px。', anim: true,
     draw: (px, S, t) => LAYOUTS[S.layout](px, THEMES[S.theme], P({ state: 'playing', collection: DEMO.longCollection, title: DEMO.longTitle + '.mp3', index: 10, pos: 95, dur: 1312 }), t) },
+  { sec: 'player', id: 'longer', name: '更长的标题', note: '40 个字缩到 18 px；21 px 以下笔画 1 格细。', anim: true,
+    draw: (px, S, t) => LAYOUTS[S.layout](px, THEMES[S.theme], P({ state: 'playing', collection: '睡前故事', title: DEMO.fitTitles[2] + '.mp3', index: 8, count: 120 }), t) },
+  { sec: 'player', id: 'longest', name: '超长标题', note: '18 px 也放不下：最后一行末尾加「…」。', anim: true,
+    draw: (px, S, t) => LAYOUTS[S.layout](px, THEMES[S.theme], P({ state: 'playing', collection: '睡前故事', title: DEMO.longestTitle + '.mp3', index: 3, count: 120 }), t) },
+  { sec: 'player', id: 'english', name: '英文标题', note: '英文单词和数字不从中间断开。', anim: true,
+    draw: (px, S, t) => LAYOUTS[S.layout](px, THEMES[S.theme], P({ state: 'playing', collection: 'English Stories', title: DEMO.enTitle + '.mp3', index: 5, count: 26 }), t) },
   { sec: 'player', id: 'end', name: '目录播完', note: '停在最后一集，不自动循环。', anim: true,
     draw: (px, S, t) => LAYOUTS[S.layout](px, THEMES[S.theme], P({ state: 'finished', index: 24, pos: 1085, dur: 1085 }), t) },
   { sec: 'player', id: 'offline', name: 'AI 不在线时', note: '右上角不显示喵喵，故事照常。', anim: true,

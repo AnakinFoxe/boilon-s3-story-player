@@ -24,15 +24,15 @@ class M3AiFullModeHostTests(unittest.TestCase):
         compiler = shutil.which("c++")
         self.assertTrue(compiler, "Native C++ compiler required; do not silently skip")
         production = (AUDIO / "audio_service.cc").read_text()
-        selected = ["AudioService", "~AudioService", "Initialize", "CreateAudioPowerTimer",
-                    "Start", "Stop", "AudioOutputTask", "CheckAndUpdateAudioPowerState",
+        selected = ["AudioService", "~AudioService", "Initialize", "Start", "Stop",
+                    "AudioOutputTask", "CheckAndUpdateAudioPowerState",
                     "BeginLocalPlayback", "SubmitLocalPcm", "PauseLocalPlayback",
                     "EndLocalPlayback", "IsLocalPlaybackActive", "LocalPlaybackSamples",
                     "IsPlaybackDrainedLocked", "MarkPlaybackDrainedLocked",
                     "PushPacketToDecodeQueue", "PlaySound"]
         # The production initializer uses two local preprocessor configuration helpers.
         macros = production[production.index("#define RATE_CVT_CFG"):production.index("#if CONFIG_IDF_TARGET")]
-        source = (FAKES / "playback_only/sdk.h").read_text().replace("#pragma once", "")
+        source = (FAKES / "m3_ai/sdk.h").read_text().replace("#pragma once", "")
         source += "\n" + without_includes((AUDIO / "fixed_queue.h").read_text())
         source += "\n#define private public\n"
         source += without_includes((AUDIO / "audio_service.h").read_text())

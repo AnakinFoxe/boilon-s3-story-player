@@ -32,6 +32,23 @@ A 故事卡、字幕关；设计说明见 [P5_1_PIXEL_UI.md](../P5_1_PIXEL_UI.md
 </tr>
 </table>
 
+## 播放页 · A 的长标题
+
+标题先用 28 px（原来的 2 倍字），放不下就 1 px 一档往下缩，用能完整放下的最大字号；最小 18 px，还放不下就在最后一行末尾加「…」。21 px 起笔画 2 格粗，以下 1 格细。
+
+<table>
+<tr>
+<td align="center"><img src="fit-23-paper-card.png" width="240" alt="23 个字：23 px，4 行"><br>23 个字：23 px，4 行</td>
+<td align="center"><img src="fit-22-paper-card.png" width="240" alt="29 个字：22 px，逗号不放行首"><br>29 个字：22 px，逗号不放行首</td>
+<td align="center"><img src="fit-20-paper-card.png" width="240" alt="36 个字：20 px，笔画变细"><br>36 个字：20 px，笔画变细</td>
+</tr>
+<tr>
+<td align="center"><img src="fit-18-paper-card.png" width="240" alt="40 个字：18 px"><br>40 个字：18 px</td>
+<td align="center"><img src="fit-cut-paper-card.png" width="240" alt="73 个字：18 px 也放不下，末尾加「…」"><br>73 个字：18 px 也放不下，末尾加「…」</td>
+<td align="center"><img src="fit-english-paper-card.png" width="240" alt="英文单词不从中间断开"><br>英文单词不从中间断开</td>
+</tr>
+</table>
+
 ## 播放页 · C 喵喵陪听
 
 喵喵戴着耳机陪着听，暂停、定位和播完各有样子。

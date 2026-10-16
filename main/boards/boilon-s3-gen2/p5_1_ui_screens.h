@@ -8,6 +8,7 @@
 #include <vector>
 #include "p5_1_ui_art.h"
 #include "p5_1_ui_options.h"
+#include "p5_1_ui_title.h"
 
 // P5-1: every page, ported from docs/boilon/p5_1_prototype/proto.js with the
 // same coordinates. The caller fills a Model; Draw paints it.
@@ -170,20 +171,12 @@ public:
         Text(index, cx + cw - 12, cy + 10, kSub, 1000000000, 1, 0, Align::kRight);
         Text(m.collection, cx + 36, cy + 10, kSub, cw - 60 - Width(index));
         c_.Dash(cx + 12, cy + 36, cw - 24, kFaint);
-        const std::string title = Title(m.title);
-        TextStyle style;
-        style.font = &f_.noto;
-        style.color = kText;
-        style.scale = 2;
-        style.max_width = cw - 24;
-        style.lines = 9;
-        const bool big = Wrap(title, style).size() <= 3;
-        style.scale = big ? 2 : 1;
-        style.lines = big ? 3 : 5;
-        style.line_pitch = big ? 32 : 20;
-        const int count = static_cast<int>(Wrap(title, style).size());
-        const int block = (count - 1) * style.line_pitch + (big ? 30 : 16);
-        c_.Text(title, cx + 12, cy + 40 + std::max(0, (ch - 48 - block) >> 1), style);
+        // As big as fits, 28 px down to 18 px (p5_1_ui_title.h).
+        const title::Fit fit = title::FitTitle(f_.noto, Title(m.title));
+        const int block =
+            (static_cast<int>(fit.lines.size()) - 1) * title::Pitch(fit.size) + fit.size + 2;
+        title::DrawLines(c_, f_.noto, fit, cx + 12, cy + 40 + std::max(0, (ch - 48 - block) >> 1),
+                         kText);
         Progress(m);
         TimeRow(m);
     }
