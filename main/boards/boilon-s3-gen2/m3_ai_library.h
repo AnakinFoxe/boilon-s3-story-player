@@ -28,6 +28,10 @@ struct Pick {
     size_t directory = 0;  // Place in the catalog's collections.
     size_t number = 0;     // 1-based file; 0 continues from the bookmark.
 };
+// 2026-10-16: progress to forget, one directory's or (none) all of it.
+struct Forget {
+    std::optional<size_t> directory;  // Place in the catalog's collections.
+};
 // JSON for the model, or (not ok) why not.
 struct Reply {
     bool ok = false;
@@ -103,27 +107,68 @@ inline std::vector<std::string> Words(std::string_view text) {
         words.pop_back();
     return words;
 }
+// The text without book-title marks, quotes, brackets, separators and spaces,
+// which a spoken name leaves out (2026-10-16: 凯叔西游记 for 凯叔《西游记》).
+inline std::string Loose(std::string_view text) {
+    constexpr std::string_view kMarks =
+        " \"'()[]-_.,:!?《》〈〉「」『』“”‘’（）【】·・，、。：！？\xE3\x80\x80";
+    std::string out;
+    for (size_t i = 0; i < text.size();) {  // One whole UTF-8 character at a time.
+        const auto lead = static_cast<unsigned char>(text[i]);
+        const size_t length = lead < 0x80 ? 1 : lead >> 5 == 6 ? 2 : lead >> 4 == 14 ? 3 : 4;
+        const auto character = text.substr(i, length);
+        if (kMarks.find(character) == std::string_view::npos)
+            out += character;
+        i += length;
+    }
+    return out;
+}
 // The directory the model named: the same name, else the only one that
-// contains the name or that the name contains. A name these replies shortened
-// still works: its "…" is dropped.
+// contains the name or that the name contains; when none does, the same again
+// without marks and spaces (Loose). A name these replies shortened still
+// works: its "…" is dropped.
 inline std::optional<size_t> FindDirectory(const media::MediaCatalog& catalog,
                                            std::string_view name) {
     if (name.size() > kCut.size() && name.substr(name.size() - kCut.size()) == kCut)
         name.remove_suffix(kCut.size());
     const auto& collections = catalog.Collections();
-    for (size_t i = 0; i < collections.size(); ++i)
-        if (Same(DirectoryName(collections[i]), name))
-            return i;
-    std::optional<size_t> found;
-    for (size_t i = 0; i < collections.size() && !name.empty(); ++i) {
-        const auto directory = DirectoryName(collections[i]);
-        if (!Contains(directory, name) && !Contains(name, directory))
-            continue;
-        if (found)
+    for (const bool loose : {false, true}) {
+        const auto wanted = loose ? Loose(name) : std::string(name);
+        if (loose && wanted.empty())
+            break;
+        const auto named = [&](size_t i) {
+            const auto directory = DirectoryName(collections[i]);
+            return loose ? Loose(directory) : directory;
+        };
+        for (size_t i = 0; i < collections.size(); ++i)
+            if (Same(named(i), wanted))
+                return i;
+        std::optional<size_t> found;
+        size_t matches = 0;
+        for (size_t i = 0; i < collections.size() && !wanted.empty(); ++i) {
+            const auto directory = named(i);
+            if (!directory.empty() &&
+                (Contains(directory, wanted) || Contains(wanted, directory))) {
+                found = i;
+                ++matches;
+            }
+        }
+        if (matches == 1)
+            return found;
+        if (matches > 1)
             return std::nullopt;
-        found = i;
     }
-    return found;
+    return std::nullopt;
+}
+// Upstream puts an error's text into the JSON it sends as it is
+// (McpServer::ReplyError); a double quote there made the server drop the
+// connection and the conversation hung (2026-10-16). Errors keep to
+// characters that need no escaping.
+inline std::string ErrorText(std::string_view text) {
+    std::string out;
+    for (const char c : text)
+        out += c == '"' ? '\'' : c == '\\' ? '/' : static_cast<unsigned char>(c) < 0x20 ? ' ' : c;
+    return out;
 }
 inline Reply NoDirectory(const media::MediaCatalog& catalog, std::string_view name) {
     const auto& collections = catalog.Collections();
@@ -424,6 +469,77 @@ public:
             return std::nullopt;
         return ModesFor(*catalog, saved_);
     }
+    // self.story.forget_progress (2026-10-16). Without a name: the pick not taken
+    // yet, else the selected directory, as in SetMode. It takes two calls: the
+    // first only records the request for 喵喵 to ask about; one with confirmed
+    // forgets it only once the user's words came in since (Heard). The reply
+    // then says whether the conversation ends: it does when this includes the
+    // selected directory.
+    Reply ForgetProgress(std::string_view directory, bool all, bool confirmed) {
+        const auto* catalog = catalog_.load(std::memory_order_acquire);
+        if (!catalog)
+            return {false, kNoCard};
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::optional<size_t> now;
+        if (pending_)
+            now = pending_->directory;
+        else if (const auto selected = Now())
+            now = selected->first;
+        Forget request;
+        if (!all) {
+            request.directory = directory.empty() ? now : FindDirectory(*catalog, directory);
+            if (!request.directory && !directory.empty())
+                return NoDirectory(*catalog, directory);
+            if (!request.directory || *request.directory >= catalog->Collections().size())
+                return {false, "Nothing is selected: name the directory."};
+        }
+        std::string name = "\"all\"";
+        if (request.directory) {
+            name.clear();
+            AppendString(name, Shorten(DirectoryName(catalog->Collections()[*request.directory])));
+        }
+        if (!confirmed) {
+            asked_ = Asked{request, heard_};
+            return {true,
+                    "{\"forgot\":\"nothing yet\",\"ask\":" + name +
+                        ",\"then\":\"after the user agrees, call again with confirmed true\"}"};
+        }
+        if (!asked_ || asked_->forget.directory != request.directory)
+            return {false,
+                    "Not asked about this yet: call without confirmed first, then ask the user."};
+        if (asked_->heard == heard_)
+            return {false,
+                    "The user has not answered yet: ask, wait for the answer, then call again with "
+                    "confirmed true."};
+        // One request waits for the player at a time; "all" covers any other.
+        if (forget_ && forget_->directory != request.directory) {
+            if (forget_->directory && request.directory)
+                return {false, "Still forgetting the last directory: try again in a moment."};
+            forget_->directory.reset();
+        } else {
+            forget_ = request;
+        }
+        asked_.reset();
+        const bool current = now && (!request.directory || *request.directory == *now);
+        return {true, "{\"forgot\":" + name +
+                          (current ? ",\"conversation\":\"ends when you finish this answer\"}"
+                                   : ",\"conversation\":\"goes on\"}")};
+    }
+    std::optional<Forget> TakeForget() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return std::exchange(forget_, std::nullopt);
+    }
+    // The server sent the user's words (the subtitles), on the main task before
+    // any tool call that answers them. Only counted, never kept.
+    void Heard() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ++heard_;
+    }
+    // A conversation starts: nothing asked about before can be confirmed now.
+    void NewConversation() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        asked_.reset();
+    }
 
 private:
     std::optional<std::pair<size_t, size_t>> Now() const {
@@ -438,6 +554,14 @@ private:
     std::atomic<uint32_t> now_{0};
     mutable std::mutex mutex_;
     std::optional<Pick> pending_;
+    std::optional<Forget> forget_;
+    // A forget 喵喵 asked about, and how many of the user's words had come in.
+    struct Asked {
+        Forget forget;
+        uint32_t heard = 0;
+    };
+    std::optional<Asked> asked_;
+    uint32_t heard_ = 0;
     std::vector<Saved> saved_;
     bool changed_ = false;
 };

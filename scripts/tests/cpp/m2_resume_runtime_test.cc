@@ -44,6 +44,10 @@ struct MemoryBlob : library::ResumeBlob {
         bytes = in;
         return true;
     }
+    bool Erase() override {
+        bytes.clear();
+        return true;
+    }
 };
 
 struct Checkpoint {
@@ -62,6 +66,8 @@ public:
           store(blob, legacy, Catalog()),
           policy(Catalog(), "runtime-card", store) {}
     std::optional<uint64_t> KnownPosition(media::MediaId track) override {
+        if (forgetting)
+            return std::nullopt;  // Like the worker: asked again once the forget ran.
         for (const auto& item : store.Positions("runtime-card"))
             if (item.first == track)
                 return item.second;
@@ -95,6 +101,18 @@ public:
         });
         return true;
     }
+    bool Forget(std::optional<media::MediaId> collection) override {
+        forgets.push_back(collection);
+        if (!accept_forgets)
+            return false;
+        ++forgetting;
+        queue.emplace_back([this, collection] {
+            forgot.push_back(store.Forget("runtime-card", collection));
+            policy.ForgetLastSave();
+            --forgetting;
+        });
+        return true;
+    }
     void Pump() {
         while (!queue.empty()) {
             auto next = std::move(queue.front());
@@ -119,7 +137,10 @@ public:
     std::optional<media::MediaId> known_track;
     uint64_t known_duration = 0;
     media::PlaybackResume policy;
-    bool accept_checkpoints = true;
+    bool accept_checkpoints = true, accept_forgets = true;
+    int forgetting = 0;
+    std::vector<std::optional<media::MediaId>> forgets;
+    std::vector<media::ResumeWrite> forgot;
     std::deque<std::function<void()>> queue;
     std::optional<media::ResumePlan> response;
     std::vector<std::pair<std::optional<media::MediaId>, media::ResumeMode>> restores;
@@ -884,6 +905,178 @@ void AiStayPaused() {
     assert(rig.runtime.PositionMs() == 55000);
 }
 
+// 2026-10-16: forgetting the selected directory while a conversation holds
+// the speaker. Its old place is never saved again: the story waits at the
+// first file's beginning, plays from there when the speaker comes back, and
+// the next files start from zero once the queued forget has run.
+void ForgetSelected() {
+    using G = media::PlayerGestures;
+    MemoryBlob blob;
+    Rig rig(blob);
+    rig.player.duration = 180000;
+    rig.player.position = 20000;
+    rig.Long(G::kDown);
+    rig.Drain();
+    rig.player.position = 30000;
+    rig.player.duration = 180000;
+    rig.Long(G::kDown);
+    rig.Drain();
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track10.mp3"), uint64_t{0}));
+    rig.player.position = 42000;
+    rig.player.duration = 180000;
+    assert(rig.runtime.Park(rig.now));  // The pause save of track10 waits in the queue.
+    rig.player.End();
+    rig.Advance(1);
+    rig.output_idle = false;  // 喵喵 speaks: the story must not wait for the speaker.
+    const auto checkpoints = rig.port.checkpoints.size();
+    const auto root = rig.runtime.Catalog().Collections()[0].id;
+    assert(rig.runtime.Forget(0, rig.now));
+    assert(rig.port.checkpoints.size() == checkpoints);  // No save of the old place.
+    assert(rig.port.forgets == std::vector<std::optional<media::MediaId>>{root});
+    assert(rig.runtime.ParkedWhilePlaying() && rig.runtime.PositionMs() == 0);
+    assert(rig.runtime.Selected() == std::make_optional(std::make_pair(size_t{0}, size_t{1})));
+    rig.Advance(30000);  // The conversation's periodic save: the first file's beginning.
+    assert(rig.port.Last(Reason::kPeriodic).track.track.file_name == "track1.mp3");
+    assert(rig.port.Last(Reason::kPeriodic).position == 0);
+    rig.output_idle = true;  // The conversation is over.
+    assert(rig.runtime.Unpark(rig.now));
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track1.mp3"), uint64_t{0}));
+    // The next file waits for the forget, then starts from zero, not at 30 s.
+    rig.player.position = 1000;
+    rig.player.duration = 180000;
+    rig.Long(G::kDown);
+    assert(rig.player.starts.back().first == "/sdcard/track1.mp3");
+    rig.Drain();
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track2.mp3"), uint64_t{0}));
+    assert(rig.port.forgot == std::vector<media::ResumeWrite>{media::ResumeWrite::kOk});
+    const auto positions = rig.port.store.Positions("runtime-card");
+    assert(positions.size() == 1 && positions[0].second == 1000);  // Only what came after.
+}
+
+// Forgetting another directory leaves the parked story alone; a pick, a pause
+// or a shutdown after forgetting the selected one; outside a conversation;
+// and the refusals, which change nothing.
+void ForgetOthers() {
+    using G = media::PlayerGestures;
+    MemoryBlob blob;
+    Rig rig(blob);
+    const auto series = rig.runtime.Catalog().Collections()[1].id;
+    assert(rig.runtime.Choose(1, 2, rig.now));
+    rig.Drain();
+    rig.player.position = 30000;
+    rig.player.duration = 180000;
+    assert(rig.runtime.Choose(0, 3, rig.now));
+    rig.Drain();
+    rig.player.position = 42000;
+    rig.player.duration = 180000;
+    assert(rig.runtime.Park(rig.now));
+    rig.player.End();
+    rig.Advance(1);
+    assert(rig.runtime.Forget(1, rig.now));
+    assert(rig.port.forgets.back() == std::optional<media::MediaId>(series));
+    assert(rig.runtime.ParkedWhilePlaying() && rig.runtime.PositionMs() == 42000);
+    assert(rig.runtime.Selected() == std::make_optional(std::make_pair(size_t{0}, size_t{3})));
+    rig.port.Pump();
+    assert(rig.runtime.Unpark(rig.now));
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track10.mp3"), uint64_t{37000}));
+    rig.Advance(1);
+    assert(rig.runtime.Choose(1, 0, rig.now));  // Not episode2 at 30 s any more.
+    rig.player.End();
+    rig.Advance(1);  // The old decoder is gone; the bookmark is still being found.
+    const auto asked = rig.port.forgets.size();
+    assert(!rig.runtime.Forget(1, rig.now) && rig.port.forgets.size() == asked);
+    rig.port.Pump();
+    rig.Advance(1);
+    rig.Advance(31);
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/series/episode1.mp3"), uint64_t{0}));
+    // The selected directory forgotten, then a pick: the pick plays, and the
+    // save before switching holds the first file's beginning.
+    rig.player.position = 50000;
+    rig.player.duration = 180000;
+    assert(rig.runtime.Park(rig.now));
+    rig.player.End();
+    rig.Advance(1);
+    assert(rig.runtime.Forget(1, rig.now) && rig.runtime.Choose(0, 2, rig.now));
+    assert(rig.port.Last(Reason::kCollectionChange).track.track.file_name == "episode1.mp3");
+    assert(rig.port.Last(Reason::kCollectionChange).position == 0);
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track2.mp3"), uint64_t{0}));
+    // Everything forgotten, then a pause: the first file's beginning, which a
+    // shutdown saves and the top key plays.
+    rig.player.position = 60000;
+    rig.player.duration = 180000;
+    rig.Advance(1);
+    assert(rig.runtime.Park(rig.now));
+    rig.player.End();
+    rig.Advance(1);
+    assert(rig.runtime.Forget(std::nullopt, rig.now));
+    assert(rig.port.forgets.back() == std::nullopt);
+    rig.runtime.StayPaused();
+    assert(!rig.runtime.ParkedWhilePlaying() && rig.runtime.PositionMs() == 0);
+    assert(rig.runtime.Selected() == std::make_optional(std::make_pair(size_t{0}, size_t{1})));
+    assert(rig.runtime.View(rig.now).state == library::PlayerState::kPaused);
+    assert(rig.runtime.Shutdown(rig.now));
+    assert(rig.port.Last(Reason::kShutdown).track.track.file_name == "track1.mp3");
+    assert(rig.port.Last(Reason::kShutdown).position == 0);
+    // Paused, the next key waits for the queued forget to learn where track2
+    // starts; meanwhile forgetting is refused. Then the top key plays it.
+    rig.Long(G::kDown);
+    const auto asked_all = rig.port.forgets.size();
+    assert(!rig.runtime.Forget(0, rig.now) && rig.port.forgets.size() == asked_all);
+    rig.port.Pump();
+    rig.Advance(1);
+    rig.Advance(31);
+    assert(rig.runtime.Selected() == std::make_optional(std::make_pair(size_t{0}, size_t{2})));
+    rig.Pause();
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track2.mp3"), uint64_t{0}));
+    // Outside a conversation the running story stops at once, without a save,
+    // and plays from the first file once the speaker is free.
+    rig.port.Pump();
+    rig.player.position = 70000;
+    rig.player.duration = 180000;
+    rig.Advance(1);
+    const auto checkpoints = rig.port.checkpoints.size();
+    const auto stops = rig.player.stops;
+    assert(rig.runtime.Forget(0, rig.now));
+    assert(rig.port.checkpoints.size() == checkpoints && rig.player.stops == stops + 1);
+    assert(rig.runtime.ParkedWhilePlaying() && !rig.runtime.Released());
+    rig.player.End();
+    rig.Advance(1);
+    assert(rig.runtime.Released() && rig.runtime.Unpark(rig.now));
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track1.mp3"), uint64_t{0}));
+    // Refused while switching, also with a bookmark awaited, as while
+    // restoring and waiting (above), by a port that cannot queue it, or for
+    // no such directory: nothing changes.
+    rig.Long(G::kDown);  // track2's place waits for the forget still queued.
+    rig.player.End();
+    rig.Advance(1);
+    const auto forgets = rig.port.forgets.size();
+    assert(!rig.runtime.Forget(0, rig.now) && rig.port.forgets.size() == forgets);
+    rig.port.Pump();
+    rig.Advance(1);
+    rig.Advance(31);  // The keys see the release the wait held back.
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track2.mp3"), uint64_t{0}));
+    rig.Long(G::kDown);  // The old decoder still drains.
+    assert(!rig.runtime.Forget(0, rig.now) && rig.port.forgets.size() == forgets);
+    rig.Drain();
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track10.mp3"), uint64_t{0}));
+    rig.port.accept_forgets = false;
+    rig.player.position = 5000;
+    rig.Advance(1);
+    assert(!rig.runtime.Forget(0, rig.now) && rig.port.forgets.size() == forgets + 1);
+    assert(!rig.runtime.Parked() && rig.runtime.PositionMs() == 5000);
+    assert(!rig.runtime.Forget(2, rig.now) && rig.port.forgets.size() == forgets + 1);
+}
+
 // Another owner ending the output session (a reply or a server push) no longer
 // fails playback: the story holds its position until the board gives it back.
 void ReleasedByAnotherOwner() {
@@ -1050,6 +1243,10 @@ int main(int argc, char** argv) {
         AiChoose();
     else if (mode == "modes")
         PlayModes();
+    else if (mode == "forget")
+        ForgetSelected();
+    else if (mode == "forget_others")
+        ForgetOthers();
     else if (mode == "ai_stay_paused")
         AiStayPaused();
     else if (mode == "skip") {

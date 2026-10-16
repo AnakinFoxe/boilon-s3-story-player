@@ -313,6 +313,54 @@ public:
         }
         return Submit(controller_.Play(), now_ms);
     }
+    // 2026-10-16: 喵喵 was asked to forget one directory's progress, or (none)
+    // all of it. The storage port deletes the saved bookmarks after the saves
+    // already queued, and the player forgets the places it remembers. When the
+    // selected directory is among them, its story waits without a decoder at
+    // the first file's beginning and plays from there when the speaker comes
+    // back (Unpark), like the AI's pick of number 1; nothing saves the old
+    // place again. False while starting or switching; it changes nothing then.
+    bool Forget(std::optional<size_t> directory, uint64_t now_ms) {
+        if (!started_ || failed_ || restoring_ || waiting_bookmark_ || bridge_.Pending() ||
+            (directory && *directory >= directories_.size()))
+            return false;
+        std::optional<media::MediaId> id;
+        if (directory)
+            id = directories_[*directory].first;
+        if (resume_ && !resume_->Forget(id))
+            return false;
+        visited_.erase(
+            std::remove_if(visited_.begin(), visited_.end(),
+                           [&](const auto& item) {
+                               if (!directory)
+                                   return true;
+                               const auto& tracks = Catalog().Collections()[*directory].tracks;
+                               return std::any_of(
+                                   tracks.begin(), tracks.end(),
+                                   [&](const auto& track) { return track.id == item.first; });
+                           }),
+            visited_.end());
+        const auto selected = controller_.CollectionIndex();
+        if (!selected || (directory && *directory != *selected))
+            return true;
+        directory_open_ = false;
+        // No checkpoint. A decoder still running (outside a conversation)
+        // stops; a parked story has none, and the speaker may be another's.
+        const bool running = player_.Running();
+        const auto result = controller_.SelectCollection(directories_[*selected].first);
+        if (running && !Submit(result, now_ms))
+            return false;
+        controller_.Play();  // Paused at the first file, like a story parked while playing.
+        controller_.Pause();
+        parked_ = park_playing_ = true;
+        explicit_seek_ = unplayable_ = awaiting_output_ = false;
+        error_handled_ = true;  // However the old decoder ended, nothing follows from it.
+        active_.reset();
+        seek_target_ = 0;
+        seek_duration_.reset();
+        Remember(controller_.CurrentTrack()->track.id, 0);
+        return true;
+    }
     // How each directory goes on after a file (AI variant); see PlayerController.
     void SetMode(size_t directory, media::PlayMode mode) { controller_.SetMode(directory, mode); }
     void Seed(uint32_t seed) { controller_.Seed(seed); }

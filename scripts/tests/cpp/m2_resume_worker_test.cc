@@ -98,7 +98,8 @@ struct FakeQueue {
 };
 struct QueueDrained {};
 static bool queue_failure = false, task_failure = false, init_failure = false,
-            commit_failure = false;
+            commit_failure = false, erase_failure = false, staged = false;
+static std::vector<std::string> erased_keys;  // nvs_erase_key calls, in order.
 static int created = 0, deleted = 0, initialized = 0, erased = 0, opens = 0, sets = 0, commits = 0,
            delays = 0;
 static int64_t timer = 0, delay_step = 1000;
@@ -216,6 +217,22 @@ int nvs_set_blob(nvs_handle_t handle, const char* key, const void* data, size_t 
     }
     const auto* bytes = static_cast<const uint8_t*>(data);
     pending.assign(bytes, bytes + size);
+    staged = true;
+    return ESP_OK;
+}
+int nvs_erase_key(nvs_handle_t handle, const char* key) {
+    assert(pumping && handle == 42);
+    const std::string name(key);
+    assert(name == "state_v2" || name == "state_v1");
+    if (observed_worker)
+        assert(observed_worker->PendingJobs() > 0);
+    erased_keys.push_back(name);
+    if (erase_failure)
+        return 99;
+    auto& bytes = name == "state_v2" ? persisted : legacy_persisted;
+    if (bytes.empty())
+        return ESP_ERR_NVS_NOT_FOUND;
+    bytes.clear();
     return ESP_OK;
 }
 int nvs_commit(nvs_handle_t handle) {
@@ -229,7 +246,8 @@ int nvs_commit(nvs_handle_t handle) {
         commit_hook();
     if (commit_failure)
         return 99;
-    persisted = pending;
+    if (std::exchange(staged, false))
+        persisted = pending;
     return ESP_OK;
 }
 void nvs_close(nvs_handle_t handle) {
@@ -263,6 +281,8 @@ void Reset() {
     }
     queues.clear();
     queue_failure = task_failure = init_failure = commit_failure = read_error = false;
+    erase_failure = staged = false;
+    erased_keys.clear();
     sdk_fd_mtime = fd_size_changed = fd_mode_changed = open_error = close_error = false;
     fd_calls = fd_failure_at = path_calls = path_failure_at = 0;
     created = deleted = initialized = erased = opens = sets = commits = delays = reads = 0;
@@ -750,6 +770,64 @@ void BoostCases(const std::string& root) {
     Reset();
 }
 
+// 2026-10-16: a forget runs after the jobs already queued; until it has run
+// every position is "not yet"; afterwards the same save writes again.
+void ForgetCases(const std::string& root) {
+    Reset();
+    WriteMp3(root + "/track.mp3");
+    const auto catalog = Catalog(root);
+    const auto track = FixtureTrack(catalog);
+    const auto id = track.track.id;
+    const auto collection = catalog.Collections().front().id;
+    ResumeWorker worker(catalog, "synthetic-card");
+    assert(worker.Start());
+    observed_worker = &worker;
+    assert(worker.Checkpoint(track, 500, 1000, 35, 100, CheckpointReason::kPause));
+    Pump();
+    assert(worker.KnownPosition(id) == std::optional<uint64_t>(500) && !persisted.empty());
+    // A save still queued, then the forget: the saved place does not come back.
+    assert(worker.Checkpoint(track, 600, 1000, 35, 101, CheckpointReason::kPause));
+    assert(worker.Forget(collection) && worker.PendingJobs() == 2);
+    assert(!worker.KnownPosition(id));
+    // A full queue refuses another job, and a refused forget changes nothing.
+    assert(!worker.Forget(std::nullopt) && worker.PendingJobs() == 2);
+    assert(!worker.KnownPosition(id));
+    Pump();
+    assert(persisted.empty() && erased_keys == (std::vector<std::string>{"state_v1", "state_v2"}));
+    assert(worker.KnownPosition(id) == std::optional<uint64_t>(0));
+    assert(worker.LastSaveStatus() == SaveStatus::kSaved && erased == 0);
+    const auto commits_before = commits;
+    assert(worker.Checkpoint(track, 600, 1000, 35, 102, CheckpointReason::kPause));
+    Pump();  // The same place as the last save: written again, not "unchanged".
+    assert(worker.LastSaveStatus() == SaveStatus::kSaved && commits > commits_before);
+    assert(!persisted.empty() && worker.KnownPosition(id) == std::optional<uint64_t>(600));
+    // Everything: both keys, whatever the table holds.
+    legacy_persisted = std::vector<uint8_t>(12, 7);
+    persisted.back() ^= 1;
+    erased_keys.clear();
+    assert(worker.Forget(std::nullopt));
+    Pump();
+    assert(persisted.empty() && legacy_persisted.empty() && erased_keys.size() == 2);
+    // A failed delete keeps the record and positions answer again.
+    assert(worker.Checkpoint(track, 600, 1000, 35, 103, CheckpointReason::kPause));
+    Pump();
+    const auto kept = persisted;
+    erase_failure = true;
+    assert(worker.Forget(collection));
+    Pump();
+    assert(persisted == kept && worker.KnownPosition(id) == std::optional<uint64_t>(600));
+    Reset();
+    // Without NVS nothing is deleted, and positions still answer afterwards.
+    init_failure = true;
+    ResumeWorker uninitialized(catalog, "synthetic-card");
+    assert(uninitialized.Start() && uninitialized.Forget(std::nullopt));
+    assert(!uninitialized.KnownPosition(id));
+    Pump();
+    assert(erased_keys.empty() && opens == 0 &&
+           uninitialized.KnownPosition(id) == std::optional<uint64_t>(0));
+    Reset();
+}
+
 void BatteryCases(const std::string& root) {
     Reset();
     WriteMp3(root + "/track.mp3");
@@ -828,6 +906,8 @@ int main(int argc, char** argv) {
         BoostCases(synthetic_root);
     else if (mode == "battery")
         BatteryCases(synthetic_root);
+    else if (mode == "forget")
+        ForgetCases(synthetic_root);
 #endif
     else
         return 2;

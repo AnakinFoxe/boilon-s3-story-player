@@ -87,6 +87,12 @@ class M2ResumeRuntimeTests(unittest.TestCase):
     def test_ai_pause_keeps_the_story_paused_five_seconds_back(self):
         self.scenario("ai_stay_paused")
 
+    def test_forgetting_the_selected_directory_never_saves_its_old_place(self):
+        self.scenario("forget")
+
+    def test_forgetting_another_directory_all_with_pick_pause_shutdown_and_refusals(self):
+        self.scenario("forget_others")
+
 
 if __name__ == "__main__":
     unittest.main()

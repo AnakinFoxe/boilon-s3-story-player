@@ -88,6 +88,9 @@ class M2ResumeWorkerTests(unittest.TestCase):
     def test_battery_reads_only_on_worker_leave_shutdown_space_and_fail_once(self):
         self.scenario("battery")
 
+    def test_forget_runs_after_queued_saves_and_positions_wait_for_it(self):
+        self.scenario("forget")
+
     def test_daily_default_on_main_construction_guard(self):
         source = (ROOT / "main/boards/boilon-s3-gen2/m2_library_main.cc").read_text()
         self.assertIn("#ifndef BOILON_M2_RESUME\n#define BOILON_M2_RESUME 1\n#endif", source)

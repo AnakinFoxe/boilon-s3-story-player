@@ -222,12 +222,29 @@ public:
         job->reason = reason;
         return Enqueue(std::move(job));
     }
+    // 2026-10-16: deletes one collection's bookmarks on this card, or (none)
+    // every bookmark on the device, after the jobs already queued. Until then
+    // KnownPosition answers "not yet", so no forgotten place is used again.
+    bool Forget(std::optional<media::MediaId> collection) override {
+        auto job = std::unique_ptr<Job>(new (std::nothrow) Job);
+        if (!job)
+            return false;
+        job->forget = true;
+        job->collection = collection;
+        ++forgetting_;
+        if (Enqueue(std::move(job)))
+            return true;
+        --forgetting_;
+        return false;
+    }
 
     uint64_t KnownDuration(media::MediaId track) override {
         std::unique_lock<std::mutex> lock(result_lock_, std::try_to_lock);
         return lock && duration_track_ && *duration_track_ == track ? duration_ms_ : 0;
     }
     std::optional<uint64_t> KnownPosition(media::MediaId track) override {
+        if (forgetting_.load())
+            return std::nullopt;  // Asked again once the bookmarks are gone.
         std::unique_lock<std::mutex> lock(result_lock_, std::try_to_lock);
         if (lock)
             for (const auto& item : positions_)
@@ -238,7 +255,7 @@ public:
 
 private:
     struct Job {
-        bool sample_battery = false;
+        bool sample_battery = false, forget = false;
         std::optional<media::ResolvedTrack> track;
         std::optional<media::MediaId> collection;
         media::ResumeMode mode = media::ResumeMode::kBoot;
@@ -280,6 +297,18 @@ private:
                          "model=factory_estimate",
                          reading.raw, reading.adc_pad_mv, BatteryEstimate::Millivolts(reading),
                          percent);
+            } else if (job->forget) {
+                const auto status = initialized ? store_.Forget(library_, job->collection)
+                                                : media::ResumeWrite::kError;
+                resume_.ForgetLastSave();
+                auto positions = store_.Positions(library_);
+                {
+                    std::lock_guard<std::mutex> lock(result_lock_);
+                    positions_ = std::move(positions);
+                }
+                --forgetting_;
+                ESP_LOGI("BoilonResume", "Forget all=%d status=%d", !job->collection,
+                         static_cast<int>(status));
             } else if (!job->track) {
                 auto plan =
                     initialized ? resume_.Restore(job->collection, job->mode) : media::ResumePlan{};
@@ -363,7 +392,7 @@ private:
     std::optional<media::MediaId> duration_track_;
     uint64_t duration_ms_ = 0;
     bool ready_ = false;
-    std::atomic<uint32_t> pending_{0};
+    std::atomic<uint32_t> pending_{0}, forgetting_{0};
     std::atomic<media::SaveStatus> last_save_{media::SaveStatus::kStorageError};
 };
 }  // namespace boilon::local_library

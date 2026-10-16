@@ -106,6 +106,27 @@ void TestForcedSavesAndUnchanged() {
     CHECK(resume.LastSuccessfulSaveMs() == std::optional<uint64_t>(4));
 }
 
+// 2026-10-16: after the store forgot records, the same save writes again;
+// nothing else of the policy changes.
+void TestForgetLastSave() {
+    const auto catalog = Fixture();
+    const auto track = Track(catalog, u8"故事").track.id;
+    MemoryResumeStore store;
+    PlaybackResume resume(catalog, "synthetic-card", store);
+    CHECK(resume.Save(track, 5000, 180000, 30, 0, CheckpointReason::kPause) == SaveStatus::kSaved);
+    CHECK(resume.Save(track, 5000, 180000, 30, 1, CheckpointReason::kPause) ==
+          SaveStatus::kUnchanged);
+    store.records.clear();  // Forgotten behind the policy's back.
+    resume.ForgetLastSave();
+    CHECK(resume.Save(track, 5000, 180000, 30, 2, CheckpointReason::kPause) == SaveStatus::kSaved);
+    CHECK(store.write_attempts == 2 && store.records.size() == 1);
+    CHECK(resume.LastSuccessfulSaveMs() == std::optional<uint64_t>(2));
+    CHECK(resume.Save(track, 5000, 180000, 30, 3, CheckpointReason::kPeriodic) ==
+          SaveStatus::kNotDue);
+    CHECK(resume.Save(track, 5000, 180000, 30, 1, CheckpointReason::kPause) ==
+          SaveStatus::kInvalidTime);
+}
+
 void TestWriteFailureAndRateLimit() {
     const auto catalog = Fixture();
     const auto track = Track(catalog, u8"故事").track.id;
@@ -361,6 +382,7 @@ void TestBoundedStoreFullAndUpdate() {
 int main() {
     TestPeriodicBoundary();
     TestForcedSavesAndUnchanged();
+    TestForgetLastSave();
     TestWriteFailureAndRateLimit();
     TestReconstructionAndIndependentDirectories();
     TestRewindFloorAndVolumeBoundaries();
@@ -373,6 +395,6 @@ int main() {
         std::cerr << failure_count << " failed checks\n";
         return 1;
     }
-    std::cout << "playback resume: 10 scenario groups passed\n";
+    std::cout << "playback resume: 11 scenario groups passed\n";
     return 0;
 }

@@ -60,7 +60,7 @@ class PlaybackResumeHostTest(unittest.TestCase):
                 str(executable),
             ])
             output = self._run([str(executable)], timeout=10)
-            self.assertIn("playback resume: 10 scenario groups passed", output)
+            self.assertIn("playback resume: 11 scenario groups passed", output)
 
     def test_resume_host_demo(self):
         output = self._run(

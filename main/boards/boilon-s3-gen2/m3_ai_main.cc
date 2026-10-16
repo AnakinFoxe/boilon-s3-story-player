@@ -584,6 +584,7 @@ void ApplyModes(boilon::local_library::Runtime<LocalMp3Player>& runtime,
     auto& power = Power();
     uint32_t battery_samples = 0;
     bool network_page = false;  // The hotspot or activation page is up.
+    std::optional<boilon::ai::card::Forget> forgetting;  // Taken, not yet done.
     while (true) {
         owner_progress_ms = NowMs();
         if (RequestedShutdown())
@@ -602,10 +603,12 @@ void ApplyModes(boilon::local_library::Runtime<LocalMp3Player>& runtime,
         using boilon::ai::EndReason;
         if (gesture == Action::kOpenAi) {
             const auto state = runtime.Controller().State();
-            if (session.Open(NowMs()))
+            if (session.Open(NowMs())) {
                 opened_ms = NowMs();
-            else
+                card.NewConversation();  // 2026-10-16: no earlier forget can be confirmed.
+            } else {
                 refused_ms = NowMs();
+            }
             ESP_LOGI(kTag, "AI open %s story_state=%d", session.Active() ? "accepted" : "refused",
                      static_cast<int>(state));
         }
@@ -629,6 +632,25 @@ void ApplyModes(boilon::local_library::Runtime<LocalMp3Player>& runtime,
         }
         if (const auto modes = card.TakeModes())
             ApplyModes(runtime, *modes);
+        // 2026-10-16: progress is forgotten at once. When that includes what the
+        // tools call selected, the conversation ends after 喵喵's answer and the
+        // story plays from its first file (Runtime::Forget). Refused while the
+        // player switches: the request waits for the next tick.
+        if (!forgetting)
+            forgetting = card.TakeForget();
+        if (forgetting) {
+            const auto now = focus.Picked() ? focus.Picked() : runtime.Selected();
+            const bool current =
+                now && (!forgetting->directory || *forgetting->directory == now->first);
+            if (runtime.Forget(forgetting->directory, NowMs())) {
+                ESP_LOGI(kTag, "AI forget directory=%d current=%d in_chat=%d",
+                         forgetting->directory ? static_cast<int>(*forgetting->directory) : -1,
+                         current, session.Active());
+                if (current)
+                    session.EndAfterReply(NowMs());
+                forgetting.reset();
+            }
+        }
         // 2026-10-15: pause or power off once 喵喵 finishes the answer; outside a
         // conversation at once.
         if (const auto end = boilon::ai::TakeStoryEnd(); end != boilon::ai::StoryEnd::kNone) {

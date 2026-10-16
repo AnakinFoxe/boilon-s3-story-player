@@ -11,6 +11,9 @@ public:
     virtual ~ResumeBlob() = default;
     virtual media::ResumeRead Read(std::vector<uint8_t>& bytes) const = 0;
     virtual bool Write(const std::vector<uint8_t>& bytes) = 0;
+    // 2026-10-16: deletes the blob, only when asked to forget progress; one that
+    // is not there counts as deleted. A blob that cannot delete says false.
+    virtual bool Erase() { return false; }
 };
 
 class BlobResumeStore final : public media::ResumeStore {
@@ -45,6 +48,8 @@ public:
         if (bytes.size() > kMaxBytes) return media::ResumeWrite::kFull;
         return blob_.Write(bytes) ? media::ResumeWrite::kOk : media::ResumeWrite::kError;
     }
+    // Every record goes (2026-10-16, forgetting progress).
+    bool Erase() { return blob_.Erase(); }
 
 private:
     static bool Valid(const media::ResumeRecord& r) {

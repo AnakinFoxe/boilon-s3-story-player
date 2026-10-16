@@ -3,7 +3,8 @@
 #include <nvs.h>
 
 namespace boilon::local_library {
-// Explicit opt-in only. No NVS initialization, auto-erase, format or migration.
+// Explicit opt-in only. No NVS initialization, auto-erase, format or migration;
+// Erase() deletes only this key, when asked to forget progress.
 // Do not construct/use this in the frozen diagnostic app or an audio task.
 class NvsResumeBlob final : public ResumeBlob {
 public:
@@ -30,6 +31,18 @@ public:
         if (nvs_open("bl_resume", NVS_READWRITE, &handle) != ESP_OK) return false;
         auto err = nvs_set_blob(handle, key_, bytes.data(), bytes.size());
         if (err == ESP_OK) err = nvs_commit(handle);
+        nvs_close(handle);
+        return err == ESP_OK;
+    }
+    bool Erase() override {
+        nvs_handle_t handle = 0;
+        if (nvs_open("bl_resume", NVS_READWRITE, &handle) != ESP_OK)
+            return false;
+        auto err = nvs_erase_key(handle, key_);
+        if (err == ESP_ERR_NVS_NOT_FOUND)
+            err = ESP_OK;
+        if (err == ESP_OK)
+            err = nvs_commit(handle);
         nvs_close(handle);
         return err == ESP_OK;
     }

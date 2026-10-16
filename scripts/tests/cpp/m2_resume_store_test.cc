@@ -160,11 +160,14 @@ void SessionCases() {
     assert(blob.writes == writes);
 }
 
-static int nvs_mode = 0, opens = 0, get_calls = 0, sets = 0, commits = 0, closes = 0;
+static int nvs_mode = 0, opens = 0, get_calls = 0, sets = 0, commits = 0, closes = 0, erases = 0,
+           opened_as = 0;
 static std::vector<uint8_t> nvs_bytes(12, 7);
 int nvs_open(const char* ns, int access, nvs_handle_t* handle) {
     assert(std::string(ns) == "bl_resume" && (access == NVS_READONLY || access == NVS_READWRITE));
-    ++opens; *handle = 42;
+    ++opens;
+    *handle = 42;
+    opened_as = access;
     return nvs_mode == 1 ? 99 : nvs_mode == 2 ? ESP_ERR_NVS_NOT_FOUND : ESP_OK;
 }
 int nvs_get_blob(nvs_handle_t handle, const char* key, void* data, size_t* size) {
@@ -181,15 +184,23 @@ int nvs_set_blob(nvs_handle_t handle, const char* key, const void*, size_t size)
     return nvs_mode == 8 ? 99 : ESP_OK;
 }
 int nvs_commit(nvs_handle_t handle) { assert(handle == 42); ++commits; return nvs_mode == 9 ? 99 : ESP_OK; }
+int nvs_erase_key(nvs_handle_t handle, const char* key) {
+    assert(handle == 42 && std::string(key) == "state_v1");
+    ++erases;
+    return nvs_mode == 10 ? ESP_ERR_NVS_NOT_FOUND : nvs_mode == 11 ? 99 : ESP_OK;
+}
 void nvs_close(nvs_handle_t handle) { assert(handle == 42); ++closes; }
-void ResetNvs(int mode) { nvs_mode = mode; opens = get_calls = sets = commits = closes = 0; }
+void ResetNvs(int mode) {
+    nvs_mode = mode;
+    opens = get_calls = sets = commits = closes = erases = opened_as = 0;
+}
 void NvsCases() {
     NvsResumeBlob blob;
     for (int mode = 0; mode <= 7; ++mode) {
         ResetNvs(mode); std::vector<uint8_t> out;
         const auto result = blob.Read(out);
         assert(result == (mode == 0 ? ResumeRead::kFound : mode == 2 || mode == 5 ? ResumeRead::kMissing : ResumeRead::kError));
-        assert(opens == 1 && sets == 0 && commits == 0);
+        assert(opens == 1 && sets == 0 && commits == 0 && erases == 0);
         assert(closes == (mode == 1 || mode == 2 ? 0 : 1));
         assert(get_calls == (mode == 1 || mode == 2 ? 0 : mode == 3 || mode == 5 || mode == 6 ? 1 : 2));
         if (mode == 0) assert(out == nvs_bytes);
@@ -197,8 +208,18 @@ void NvsCases() {
     for (int mode : {0, 1, 8, 9}) {
         ResetNvs(mode); const bool result = blob.Write(nvs_bytes);
         assert(result == (mode == 0) && opens == 1 && get_calls == 0);
-        assert(sets == (mode == 1 ? 0 : 1));
+        assert(sets == (mode == 1 ? 0 : 1) && erases == 0);
         assert(commits == (mode == 1 || mode == 8 ? 0 : 1));
+        assert(closes == (mode == 1 ? 0 : 1));
+    }
+    // 2026-10-16: forgetting progress deletes only this key; a key that is not
+    // there counts as deleted, any other failure is reported.
+    for (int mode : {0, 1, 9, 10, 11}) {
+        ResetNvs(mode);
+        const bool result = blob.Erase();
+        assert(result == (mode == 0 || mode == 10) && opens == 1 && opened_as == NVS_READWRITE);
+        assert(get_calls == 0 && sets == 0 && erases == (mode == 1 ? 0 : 1));
+        assert(commits == (mode == 1 || mode == 11 ? 0 : 1));
         assert(closes == (mode == 1 ? 0 : 1));
     }
     for (size_t size : {size_t{0}, size_t{11}, size_t{8193}}) {
