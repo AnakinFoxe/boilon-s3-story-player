@@ -49,9 +49,10 @@ jobs:
           cp build/xiaozhi.bin "dist/boilon-ai-player-$VERSION.bin"
           python scripts/boilon/collect_licenses.py build dist/THIRD_PARTY_LICENSES.txt
           python scripts/boilon/make_otadata.py dist/boilon-otadata-ota1.bin
+          cp scripts/boilon/boilon_flash.py scripts/boilon/rom_latch_gpio15.py dist/
           cd dist
-          sha256sum "boilon-ai-player-$VERSION.bin" boilon-otadata-ota1.bin THIRD_PARTY_LICENSES.txt \
-            > SHA256SUMS
+          sha256sum "boilon-ai-player-$VERSION.bin" boilon-otadata-ota1.bin boilon_flash.py \
+            rom_latch_gpio15.py THIRD_PARTY_LICENSES.txt > SHA256SUMS
           cat SHA256SUMS
 
       - name: Upload the release files

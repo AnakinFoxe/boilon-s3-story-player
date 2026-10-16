@@ -75,6 +75,7 @@ jobs:
             scripts.tests.test_m7_sd_update \
             scripts.tests.test_boilon_rom_latch \
             scripts.tests.test_boilon_otadata \
+            scripts.tests.test_boilon_flash \
             scripts.tests.test_boilon_collect_licenses
 
   build:

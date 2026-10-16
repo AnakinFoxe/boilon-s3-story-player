@@ -24,10 +24,11 @@ BOILON S3 二代（ESP32-S3）儿童故事机的非官方固件板型：离线�
 | TF 卡，1 线 SDMMC | CLK 47、CMD 48、D0 21 |
 | 电量（分压后的 ADC1 通道 3） | GPIO4 |
 
-ROM 下载模式下没有程序保持 GPIO15，松开电源键就会断电。用 USB 刷机前，先按住顶部键运行
-[`scripts/boilon/rom_latch_gpio15.py`](../../../scripts/boilon/rom_latch_gpio15.py)，看到 PASS 再松手。这台机器上 USB 的
-`hard_reset` 会停在下载模式；要让它离开，用 esptool 的 `--after watchdog_reset` 关机，再按电源键开机。备份、写入和刷回的
-完整步骤见[刷机说明](../../../docs/boilon/FLASHING.md)。
+ROM 下载模式下没有程序保持 GPIO15，松开电源键就会断电。用 USB 刷机时要按住顶部键开机，由
+[`scripts/boilon/rom_latch_gpio15.py`](../../../scripts/boilon/rom_latch_gpio15.py) 从 ROM 把 GPIO15 拉高，看到 PASS 再松手。这台
+机器上 USB 的 `hard_reset` 会停在下载模式；要让它离开，用 esptool 的 `--after watchdog_reset` 关机，再按电源键开机。
+[`scripts/boilon/boilon_flash.py`](../../../scripts/boilon/boilon_flash.py) 把保电、检查、整片备份、写入和关机串成一条命令，
+用法见[刷机说明](../../../docs/boilon/FLASHING.md)。
 
 ## AI 变体：`boilon-s3-gen2-ai`
 
