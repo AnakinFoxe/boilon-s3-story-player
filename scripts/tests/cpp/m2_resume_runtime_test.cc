@@ -2,6 +2,7 @@
 #include "boards/boilon-s3-gen2/m2_library_runtime.h"
 #include "boards/boilon-s3-gen2/m2_resume_store.h"
 
+#include <algorithm>
 #include <cassert>
 #include <deque>
 #include <functional>
@@ -744,6 +745,145 @@ void AiParkWhilePaused() {
     assert(rig.runtime.Controller().State() == media::PlaybackState::kPlaying);
 }
 
+// 2026-10-15: each directory's play mode through the real runtime. Files the
+// shuffle or a repeat moves to start from zero; every other start keeps the
+// bookmark rules.
+void PlayModes() {
+    using G = media::PlayerGestures;
+    using media::PlayMode;
+    const auto finish = [](Rig& rig, FakePlayer::Result result = FakePlayer::Result::kFinished) {
+        rig.player.position = rig.player.duration = 180000;
+        rig.player.End(result);
+        rig.Advance(1);
+        rig.Advance(31);
+    };
+    const auto started = [](const Rig& rig, const char* path, uint64_t offset) {
+        return rig.player.starts.back() == std::make_pair(std::string(path), offset);
+    };
+    MemoryBlob blob;
+    Rig rig(blob);
+    rig.runtime.Seed(7);
+    assert(rig.runtime.View(rig.now).mode == PlayMode::kOrder);
+    // Bookmarks: track1 at 20 s and track2 at 30 s; track10 plays.
+    rig.player.position = 20000;
+    rig.player.duration = 180000;
+    rig.Long(G::kDown);
+    rig.Drain();
+    rig.player.position = 30000;
+    rig.Long(G::kDown);
+    rig.Drain();
+    assert(started(rig, "/sdcard/track10.mp3", 0));
+    // Loop: after the last file the first plays again, from its bookmark, and
+    // the previous key wraps to the last file.
+    rig.runtime.SetMode(0, PlayMode::kLoop);
+    assert(rig.runtime.View(rig.now).mode == PlayMode::kLoop);
+    finish(rig);
+    assert(started(rig, "/sdcard/track1.mp3", 20000) && !rig.runtime.Finished());
+    rig.player.position = 25000;
+    rig.Long(G::kUp);
+    rig.Drain();
+    assert(started(rig, "/sdcard/track10.mp3", 0));
+    // Single: the file plays again from zero; one that cannot play is not
+    // retried, the next one (wrapping around) plays and repeats instead.
+    rig.runtime.SetMode(0, PlayMode::kSingle);
+    finish(rig);
+    assert(started(rig, "/sdcard/track10.mp3", 0));
+    rig.player.End(FakePlayer::Result::kError);
+    rig.Advance(1);
+    rig.Advance(31);
+    assert(started(rig, "/sdcard/track1.mp3", 25000));
+    finish(rig);
+    assert(started(rig, "/sdcard/track1.mp3", 0));
+    // Shuffle: the round after track1 holds the other two, each from zero,
+    // even track2 with its 30 s bookmark.
+    rig.runtime.SetMode(0, PlayMode::kShuffle);
+    assert(rig.runtime.View(rig.now).mode == PlayMode::kShuffle);
+    std::vector<std::string> round;
+    for (int i = 0; i < 2; ++i) {
+        finish(rig);
+        assert(rig.player.starts.back().second == 0);
+        round.push_back(rig.player.starts.back().first);
+    }
+    const auto last = round.back();
+    std::sort(round.begin(), round.end());
+    assert(round == (std::vector<std::string>{"/sdcard/track10.mp3", "/sdcard/track2.mp3"}));
+    rig.player.position = 10000;
+    rig.Long(G::kDown);  // A new round, never the file just heard first.
+    rig.Drain();
+    assert(rig.player.starts.back().first != last && rig.player.starts.back().second == 0);
+    rig.player.position = 10000;
+    rig.Long(G::kUp);  // Back to the file just heard, from zero.
+    rig.Drain();
+    assert(started(rig, last.c_str(), 0));
+    // The AI's pick in a shuffled directory starts that file, then shuffles on.
+    assert(rig.runtime.Choose(0, 2, rig.now));
+    rig.Drain();
+    assert(started(rig, "/sdcard/track2.mp3", 0));
+    finish(rig);
+    assert(rig.player.starts.back().first != "/sdcard/track2.mp3");
+    assert(rig.player.starts.back().second == 0);
+    // Another directory keeps its own mode; continuing it keeps the bookmark.
+    rig.runtime.SetMode(1, PlayMode::kShuffle);
+    assert(rig.runtime.Choose(1, 1, rig.now));
+    rig.Drain();
+    assert(started(rig, "/sdcard/series/episode1.mp3", 0));
+    rig.player.position = 40000;
+    assert(rig.runtime.Choose(0, 1, rig.now));
+    rig.Drain();
+    assert(started(rig, "/sdcard/track1.mp3", 0));
+    assert(rig.runtime.View(rig.now).mode == PlayMode::kShuffle);
+    rig.runtime.SetMode(0, PlayMode::kOrder);
+    assert(rig.runtime.View(rig.now).mode == PlayMode::kOrder);
+    rig.port.Pump();
+    assert(rig.runtime.Choose(1, 0, rig.now));
+    rig.Drain();
+    assert(started(rig, "/sdcard/series/episode1.mp3", 40000));
+    finish(rig);
+    assert(started(rig, "/sdcard/series/episode2.mp3", 0));
+    finish(rig);  // Two files: the shuffle goes back and forth.
+    assert(started(rig, "/sdcard/series/episode1.mp3", 0) && !rig.runtime.Finished());
+}
+
+// The AI asked the story to stay paused: after the conversation it keeps its
+// place about five seconds back, and the top key starts it there. Outside a
+// conversation the request works like the top key.
+void AiStayPaused() {
+    MemoryBlob blob;
+    Rig rig(blob);
+    rig.player.position = 42000;
+    rig.player.duration = 180000;
+    rig.runtime.StayPaused();  // Not parked: nothing to do.
+    assert(rig.runtime.Controller().State() == media::PlaybackState::kPlaying);
+    assert(rig.runtime.Park(rig.now));
+    rig.player.End();
+    rig.Advance(1);
+    assert(rig.runtime.ParkedWhilePlaying());
+    rig.runtime.StayPaused();
+    assert(!rig.runtime.ParkedWhilePlaying() && rig.runtime.PositionMs() == 37000);
+    const auto starts = rig.player.starts.size();
+    assert(rig.runtime.Unpark(rig.now) && rig.player.starts.size() == starts);
+    assert(rig.runtime.View(rig.now).state == library::PlayerState::kPaused);
+    rig.Pause();  // No decoder to unpause: a new one starts at the kept place.
+    assert(rig.player.starts.size() == starts + 1);
+    assert(rig.player.starts.back() ==
+           std::make_pair(std::string("/sdcard/track1.mp3"), uint64_t{37000}));
+    rig.player.position = 50000;
+    const auto pauses = rig.player.pauses.size();
+    assert(rig.runtime.Pause(rig.now));
+    assert(rig.runtime.Controller().State() == media::PlaybackState::kPaused);
+    assert(rig.player.pauses.size() == pauses + 1 && rig.player.pauses.back());
+    assert(rig.port.Last(Reason::kPause).position == 50000);
+    assert(rig.runtime.Pause(rig.now) && rig.player.pauses.size() == pauses + 1);
+    rig.Pause();  // Playing again; then a server push takes the speaker.
+    rig.player.position = 60000;
+    rig.Advance(1);
+    rig.player.End();
+    rig.Advance(1);
+    assert(rig.runtime.ParkedWhilePlaying());
+    assert(rig.runtime.Pause(rig.now) && !rig.runtime.ParkedWhilePlaying());
+    assert(rig.runtime.PositionMs() == 55000);
+}
+
 // Another owner ending the output session (a reply or a server push) no longer
 // fails playback: the story holds its position until the board gives it back.
 void ReleasedByAnotherOwner() {
@@ -908,6 +1048,10 @@ int main(int argc, char** argv) {
         ParkRefusedWhileBusy();
     else if (mode == "ai_choose")
         AiChoose();
+    else if (mode == "modes")
+        PlayModes();
+    else if (mode == "ai_stay_paused")
+        AiStayPaused();
     else if (mode == "skip") {
         SkipAfterSound();
         SoundClearsCardFailure();

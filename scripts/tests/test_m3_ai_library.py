@@ -21,6 +21,7 @@ SOURCE = r'''
 #include <cassert>
 #include <cstdio>
 #include <string>
+#include <vector>
 #include "m3_ai_library.h"
 using namespace boilon::ai::card;
 
@@ -118,8 +119,8 @@ void Lists() {
     assert(Has(reply.text, R"("page":1,"pages":1)") && !Has(reply.text, "\"now\""));
     card.SetNow(std::make_pair(xiyou, size_t{7}));
     reply = card.List("", "", 1);
-    assert(Has(reply.text,
-               R"("now":{"directory":"凯叔西游记","number":7,"title":"007 三打白骨精（上）"})"));
+    assert(Has(reply.text, R"("now":{"directory":"凯叔西游记","number":7,)"
+                           R"("title":"007 三打白骨精（上）","mode":"order"})"));
     card.SetNow(std::make_pair(xiyou, size_t{26}));  // Not a file: no "now".
     assert(!Has(card.List("", "", 1).text, "\"now\""));
     card.SetNow(std::nullopt);
@@ -211,6 +212,105 @@ void Picks() {
     assert(pick && pick->directory == sanguo && pick->number == 3);
 }
 
+// 2026-10-15: each directory's play mode, what NVS keeps and what the tools say.
+void Modes() {
+    using media::PlayMode;
+    assert(std::string(ModeName(PlayMode::kOrder)) == "order" &&
+           std::string(ModeName(PlayMode::kShuffle)) == "shuffle");
+    assert(ParseMode("loop") == PlayMode::kLoop && ParseMode("single") == PlayMode::kSingle);
+    assert(!ParseMode("Loop") && !ParseMode("") && !ParseMode("random"));
+    // The saved format: byte 1, then 8-byte IDs (little-endian) and mode bytes.
+    const std::vector<Saved> two = {{0x0102030405060708ULL, PlayMode::kShuffle},
+                                    {42, PlayMode::kSingle}};
+    const auto bytes = EncodeModes(two);
+    assert(bytes.size() == 19 && bytes[0] == 1 && bytes[1] == 0x08 && bytes[8] == 0x01 &&
+           bytes[9] == 3 && bytes[10] == 42 && bytes[18] == 2);
+    auto back = DecodeModes(bytes);
+    assert(back.size() == 2 && back[0].directory == two[0].directory &&
+           back[0].mode == PlayMode::kShuffle && back[1].directory == 42 &&
+           back[1].mode == PlayMode::kSingle);
+    assert(DecodeModes({}).empty() && DecodeModes({1}).empty() && EncodeModes({}) ==
+                                                                   std::vector<uint8_t>{1});
+    auto other = bytes;
+    other[0] = 2;  // Another format: nothing.
+    assert(DecodeModes(other).empty());
+    other = bytes;
+    other.pop_back();  // Not whole entries: nothing.
+    assert(DecodeModes(other).empty());
+    other = bytes;
+    other[9] = 0;  // A bad mode drops only that entry, and so does a repeated ID.
+    assert(DecodeModes(other).size() == 1 && DecodeModes(other)[0].directory == 42);
+    other = bytes;
+    other.insert(other.end(), bytes.begin() + 10, bytes.end());
+    assert(DecodeModes(other).size() == 2);
+    std::vector<Saved> full(64, {0, PlayMode::kLoop});
+    for (size_t i = 0; i < full.size(); ++i)
+        full[i].directory = i + 1;
+    assert(DecodeModes(EncodeModes(full)).size() == 64);
+    full.push_back({99, PlayMode::kLoop});  // More than the limit: nothing.
+    assert(DecodeModes(EncodeModes(full)).empty());
+
+    const auto catalog = Library();
+    const auto xiyou = Index(catalog, "凯叔西游记"), songs = Index(catalog, "西游记儿歌");
+    Card card;
+    std::vector<uint8_t> saved = {9};
+    assert(!card.SetMode("凯叔西游记", "loop", saved).ok && saved.empty());  // No card.
+    card.LoadModes(EncodeModes({{catalog.Collections()[songs].id.value, PlayMode::kShuffle},
+                                {12345, PlayMode::kLoop}}));
+    auto modes = card.Modes(catalog);
+    assert(modes.size() == catalog.Collections().size() && modes[songs] == PlayMode::kShuffle &&
+           modes[xiyou] == PlayMode::kOrder);
+    card.Publish(&catalog);
+    assert(!card.TakeModes());  // Loading is not a change.
+    auto reply = card.List("", "", 1);
+    assert(Has(reply.text, R"({"name":"西游记儿歌","files":2,"mode":"shuffle"})"));
+    assert(Has(reply.text, R"({"name":"凯叔西游记","files":25})"));
+    card.SetNow(std::make_pair(xiyou, size_t{7}));
+    assert(Has(card.List("", "", 1).text,
+               R"("now":{"directory":"凯叔西游记","number":7,"title":"007 三打白骨精（上）","mode":"order"})"));
+
+    assert(!card.SetMode("", "random", saved).ok && saved.empty());
+    reply = card.SetMode("西游记", "loop", saved);  // Two directories contain it.
+    assert(!reply.ok && Has(reply.text, "No single directory matches") && saved.empty());
+    reply = card.SetMode("", "single", saved);  // The selected directory.
+    assert(reply.ok && reply.text == R"({"directory":"凯叔西游记","mode":"single"})");
+    back = DecodeModes(saved);  // Added after what was loaded.
+    assert(back.size() == 3 && back[2].directory == catalog.Collections()[xiyou].id.value &&
+           back[2].mode == PlayMode::kSingle && back[1].directory == 12345);
+    modes = *card.TakeModes();
+    assert(modes[xiyou] == PlayMode::kSingle && modes[songs] == PlayMode::kShuffle);
+    assert(!card.TakeModes());
+    reply = card.SetMode("凯叔", "single", saved);  // Unchanged: nothing to save or apply.
+    assert(reply.ok && saved.empty() && !card.TakeModes());
+    assert(Has(card.List("", "", 1).text, R"(,"mode":"single"})"));
+    // A pick not taken yet is what "this one" means; then the selection again.
+    assert(card.Play("钱儿爸超级三国", 2).ok);
+    reply = card.SetMode("", "loop", saved);
+    assert(reply.ok && Has(reply.text, R"("directory":"钱儿爸超级三国","mode":"loop")"));
+    assert(card.Take() && card.SetMode("", "order", saved).ok);
+    back = DecodeModes(saved);  // Back in order: the directory leaves the saved list.
+    assert(saved.size() == 1 + 3 * 9 && back.size() == 3 && back[2].directory == catalog.Collections()[Index(catalog, "钱儿爸超级三国")].id.value);
+    assert(card.TakeModes()->at(xiyou) == PlayMode::kOrder);
+    back = DecodeModes(saved);
+    assert(std::none_of(back.begin(), back.end(), [&](const Saved& entry) {
+        return entry.directory == catalog.Collections()[xiyou].id.value;
+    }));
+    card.SetNow(std::nullopt);
+    reply = card.SetMode("", "loop", saved);
+    assert(!reply.ok && reply.text == "Nothing is selected: name the directory." && saved.empty());
+    // The oldest entry goes when the list is full; the newest stays.
+    std::vector<Saved> many;
+    for (uint64_t i = 1; i <= 64; ++i)
+        many.push_back({i, PlayMode::kLoop});
+    card.LoadModes(EncodeModes(many));
+    assert(card.SetMode("Bedtime Songs", "shuffle", saved).ok);
+    back = DecodeModes(saved);
+    assert(back.size() == 64 && back.front().directory == 2 &&
+           back.back().directory == catalog.Collections()[Index(catalog, "Bedtime Songs")].id.value);
+    card.Publish(nullptr);
+    assert(card.SetMode("凯叔西游记", "loop", saved).text == kNoCard && !card.TakeModes());
+}
+
 // The most a card may hold, with long names: every reply stays near 4 KB.
 void Bounded() {
     media::MediaCatalogBuilder builder("full");
@@ -238,6 +338,15 @@ void Bounded() {
     replies.push_back(card.List("", Repeat("名", 200), 1));
     replies.push_back(card.List("没有这个", "", 1));
     replies.push_back(card.Play(first, 32));
+    std::vector<Saved> all;  // Every directory shows a mode.
+    for (const auto& collection : built.catalog.Collections())
+        all.push_back({collection.id.value, media::PlayMode::kShuffle});
+    card.LoadModes(EncodeModes(all));
+    for (int page = 1; page <= 4; ++page)
+        replies.push_back(card.List("", "", page));
+    std::vector<uint8_t> saved;
+    replies.push_back(card.SetMode(first, "loop", saved));
+    assert(replies.back().ok && saved.size() == 1 + 64 * 9);
     for (const auto& reply : replies)
         assert(reply.text.size() <= 4096 && WholeUtf8(reply.text));
     assert(!card.List("", "", 5).ok && Has(replies[8].text, " and 44 more."));
@@ -250,6 +359,7 @@ int main() {
     Lists();
     Search();
     Picks();
+    Modes();
     Bounded();
 }
 '''
@@ -292,13 +402,43 @@ class M3AiLibraryHostTests(unittest.TestCase):
         no_story = main.split("[[noreturn]] void NoStory(", 1)[1].split("\n}\n", 1)[0]
         self.assertIn("Card::Shared().Publish(nullptr);", no_story)
         # In a conversation the pick waits for the answer; outside one it plays now.
-        self.assertIn("card.SetNow(runtime.Selected());", run)
+        self.assertIn("card.SetNow(focus.Picked() ? focus.Picked() : runtime.Selected());", run)
         take = run.split("if (const auto pick = card.Take()) {", 1)[1].split("\n        }\n", 1)[0]
         self.assertLess(take.index("focus.Choose(*pick);"), take.index("session.EndAfterReply("))
         self.assertIn("runtime.Choose(pick->directory, pick->number, NowMs())", take)
         resume = main.split("bool ResumeStory(uint64_t now_ms) override {", 1)[1]
         resume = resume.split("\n    }\n", 1)[0]
         self.assertLess(resume.index("runtime_->Choose("), resume.index("runtime_->Unpark("))
+        # 2026-10-15: the play mode, pause and power-off tools, each forwarding.
+        for name, call in (("self.story.set_play_mode", "Card::Shared().SetMode("),
+                           ("self.story.pause", "story_end = boilon::ai::StoryEnd::kPause;"),
+                           ("self.story.power_off", "story_end = boilon::ai::StoryEnd::kPowerOff;")):
+            self.assertIn(name, names)
+            self.assertIn(call, board.split(f'"{name}"', 1)[1].split("});", 1)[0])
+        mode_tool = board.split('"self.story.set_play_mode"', 1)[1].split("});", 1)[0]
+        self.assertIn("bytes.empty() ? -1 : SavePlayModes(bytes)", mode_tool)  # Only a change.
+        pause_tool = board.split('"self.story.pause"', 1)[1].split("});", 1)[0]
+        self.assertLess(pause_tool.index("Published()"), pause_tool.index("story_end ="))
+        # Saved modes apply before the boot resume plays; the shuffle seed is random.
+        start = run.index("runtime.Start(NowMs())")
+        for call in ("runtime.Seed(esp_random());", "card.LoadModes(boilon::ai::ReadPlayModes());",
+                     "ApplyModes(runtime, card.Modes(runtime.Catalog()));"):
+            self.assertLess(run.index(call), start)
+        self.assertIn("if (const auto modes = card.TakeModes())\n            ApplyModes(runtime, *modes);",
+                      run)
+        # In a conversation pause and power-off wait for the answer; outside one, at once.
+        end = run.split("if (const auto end = boilon::ai::TakeStoryEnd();", 1)[1]
+        end = end.split("\n        }\n", 1)[0]
+        self.assertLess(end.index("focus.End(end);"), end.index("session.EndAfterReply(NowMs());"))
+        self.assertIn("NormalShutdown(lcd, player, runtime, persistence);", end)
+        self.assertIn("runtime.Pause(NowMs())", end)
+        self.assertIn("if (focus.PowerOffDue() && !session.Active())\n            NormalShutdown(",
+                      run)
+        self.assertLess(resume.index("StoryEnd::kPowerOff"), resume.index("runtime_->StayPaused();"))
+        self.assertLess(resume.index("runtime_->StayPaused();"), resume.index("runtime_->Choose("))
+        self.assertIn("page.EndAfterReply(now);", no_story)
+        self.assertIn('if (power_off && !page.Conversation().Active())\n            PowerOff("USER");',
+                      no_story)
         # The previous key no longer restarts the current file first.
         previous = runtime.split("case media::GestureAction::kPreviousTrack:", 1)[1]
         self.assertNotIn("RestartAt", previous.split("default:", 1)[0])

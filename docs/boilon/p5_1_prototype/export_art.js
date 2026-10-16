@@ -42,5 +42,5 @@ for (const [name, key] of [['kPaperRgb', 'paper'], ['kNightRgb', 'night']]) {
   for (let i = 0; i < values.length; i += 8) console.log('    ' + values.slice(i, i + 8).join(', ') + ',');
   console.log('};');
 }
-for (const name of ['play', 'pause', 'hourglass', 'done', 'warn', 'folder', 'speaker', 'mute', 'wifi', 'sd', 'box', 'moon', 'ff', 'rew', 'note'])
+for (const name of ['play', 'pause', 'hourglass', 'done', 'warn', 'folder', 'speaker', 'mute', 'wifi', 'sd', 'box', 'moon', 'ff', 'rew', 'note', 'loop', 'single', 'shuffle'])
   console.log(`${name}: ${JSON.stringify(ctx.ICONS[name])}`);

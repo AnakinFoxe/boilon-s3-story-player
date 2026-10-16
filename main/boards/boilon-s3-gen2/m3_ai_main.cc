@@ -4,6 +4,7 @@
 #include <driver/sdmmc_host.h>
 #include <esp_heap_caps.h>
 #include <esp_log.h>
+#include <esp_random.h>
 #include <esp_timer.h>
 #include <esp_vfs_fat.h>
 #include <hal/usb_serial_jtag_ll.h>
@@ -12,6 +13,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 #include "application.h"
 #include "audio/audio_service.h"
 #include "audio/local_mp3_player.h"
@@ -53,6 +55,8 @@ bool AiReady();
 bool TakeBackToStory();  // The "back to story" MCP tool was called.
 void ApplyBargeIn();     // Before a conversation: the saved barge-in switch (P5-3).
 int BatteryLevel();      // For self.get_device_status; -1 while unknown.
+StoryEnd TakeStoryEnd();               // The pause or power_off tool was called (2026-10-15).
+std::vector<uint8_t> ReadPlayModes();  // NVS bl_ai/play_modes, before the player starts.
 }  // namespace boilon::ai
 
 namespace {
@@ -311,12 +315,35 @@ public:
     bool ResumeStory(uint64_t now_ms) override {
         if (!runtime_)
             return true;
+        // 2026-10-15: power off keeps what was heard for the shutdown save.
+        if (end_ == boilon::ai::StoryEnd::kPowerOff)
+            return true;
+        if (std::exchange(end_, boilon::ai::StoryEnd::kNone) == boilon::ai::StoryEnd::kPause) {
+            runtime_->StayPaused();
+            return true;
+        }
         if (const auto pick = std::exchange(pick_, std::nullopt))
             return runtime_->Choose(pick->directory, pick->number, now_ms);
         return runtime_->Unpark(now_ms);
     }
-    // P5-2: played instead of the parked story when the conversation ends.
-    void Choose(boilon::ai::card::Pick pick) { pick_ = pick; }
+    // P5-2: played instead of the parked story when the conversation ends. The
+    // later request wins over a pause or power-off (2026-10-15), and they over it.
+    void Choose(boilon::ai::card::Pick pick) {
+        pick_ = pick;
+        end_ = boilon::ai::StoryEnd::kNone;
+    }
+    void End(boilon::ai::StoryEnd end) {
+        end_ = end;
+        pick_.reset();
+    }
+    // The conversation that asked to power off is over.
+    bool PowerOffDue() const { return end_ == boilon::ai::StoryEnd::kPowerOff; }
+    // A pick waiting for the conversation to end, as the tools see the selection.
+    std::optional<std::pair<size_t, size_t>> Picked() const {
+        if (!pick_)
+            return std::nullopt;
+        return std::make_pair(pick_->directory, pick_->number);
+    }
     // M5 batch 5: upstream was in its upgrade state at the last App() read.
     bool Upgrading() const { return upgrading_; }
     bool OutputIdle() override { return audio_.IsPlaybackIdle(); }
@@ -332,8 +359,20 @@ private:
     boilon::local_library::Runtime<LocalMp3Player>* runtime_;
     AudioService& audio_;
     std::optional<boilon::ai::card::Pick> pick_;
+    boilon::ai::StoryEnd end_ = boilon::ai::StoryEnd::kNone;
     bool upgrading_ = false;
 };
+// 2026-10-15: each directory's play mode, at boot and after the tool changed one.
+void ApplyModes(boilon::local_library::Runtime<LocalMp3Player>& runtime,
+                const std::vector<media::PlayMode>& modes) {
+    size_t set = 0;
+    for (size_t i = 0; i < modes.size(); ++i) {
+        runtime.SetMode(i, modes[i]);
+        set += modes[i] != media::PlayMode::kOrder;
+    }
+    ESP_LOGI(kTag, "Play modes: %u of %u directories not in order", static_cast<unsigned>(set),
+             static_cast<unsigned>(modes.size()));
+}
 // M5 batch 5: the no-story page powers off by itself. There is nothing to save:
 // the low-battery page shows about 3 s, the other reasons go straight off.
 [[noreturn]] void NoStoryOff(boilon::local_library::LibraryLcd& lcd,
@@ -370,9 +409,18 @@ private:
     uint64_t sampled_ms = NowMs();
     auto& power = Power();
     bool network_page = false;  // The hotspot or activation page is up.
+    bool power_off = false;     // 喵喵 was asked to (2026-10-15).
     while (true) {
         const uint64_t now = NowMs();
         owner_progress_ms = now;
+        // Pause needs a story: its tool refuses without a card.
+        if (boilon::ai::TakeStoryEnd() == boilon::ai::StoryEnd::kPowerOff) {
+            ESP_LOGI(kTag, "AI power off in_chat=%d without a story", page.Conversation().Active());
+            power_off = true;
+            page.EndAfterReply(now);
+        }
+        if (power_off && !page.Conversation().Active())
+            PowerOff("USER");
         const bool ai_ready = boilon::ai::AiReady();
         const auto tick = page.Poll(Pressed(), now, ai_ready, codec.OutputVolume(),
                                     boilon::ai::TakeBackToStory());
@@ -518,10 +566,13 @@ private:
     ESP_LOGI(kTag, "Trace config rate=%d dac_db=%.1f volume=10 volume_max=%d step_db=%.1f",
              audio.LocalOutputSampleRate(), kDacGainDb, kMaxVolume,
              5 * boilon::local_player::kDbPerVolume);
+    auto& card = boilon::ai::card::Card::Shared();
+    runtime.Seed(esp_random());
+    card.LoadModes(boilon::ai::ReadPlayModes());
+    ApplyModes(runtime, card.Modes(runtime.Catalog()));  // Before the boot resume plays.
     if (!runtime.Start(NowMs()))
         PowerOff("PLAY_START");
     boilon::sd_update::ConfirmIfPending();  // M7: startup completed with a story.
-    auto& card = boilon::ai::card::Card::Shared();
     card.Publish(&runtime.Catalog());  // Unchanged from here on; the tools only read it.
     StoryFocus focus(&runtime, audio);
     boilon::ai::Session session(focus);
@@ -564,7 +615,7 @@ private:
             session.Close(EndReason::kTool, NowMs());
         // P5-2: in a conversation the pick plays once 喵喵 finishes the answer;
         // outside one (the server called the tool) it plays now.
-        card.SetNow(runtime.Selected());
+        card.SetNow(focus.Picked() ? focus.Picked() : runtime.Selected());
         if (const auto pick = card.Take()) {
             ESP_LOGI(kTag, "AI play directory=%u number=%u in_chat=%d",
                      static_cast<unsigned>(pick->directory), static_cast<unsigned>(pick->number),
@@ -576,6 +627,22 @@ private:
                 ESP_LOGW(kTag, "AI play refused: the player is switching");
             }
         }
+        if (const auto modes = card.TakeModes())
+            ApplyModes(runtime, *modes);
+        // 2026-10-15: pause or power off once 喵喵 finishes the answer; outside a
+        // conversation at once.
+        if (const auto end = boilon::ai::TakeStoryEnd(); end != boilon::ai::StoryEnd::kNone) {
+            const bool off = end == boilon::ai::StoryEnd::kPowerOff;
+            ESP_LOGI(kTag, "AI %s in_chat=%d", off ? "power off" : "pause", session.Active());
+            if (session.Active()) {
+                focus.End(end);
+                session.EndAfterReply(NowMs());
+            } else if (off) {
+                NormalShutdown(lcd, player, runtime, persistence);
+            } else if (!runtime.Pause(NowMs())) {
+                ESP_LOGW(kTag, "AI pause refused: the player is switching");
+            }
+        }
         // Events: 1 chat requested, 2 ended, 3 story resumed (delay 0 after a push or
         // late reply), 4 closed a conversation nobody opened.
         if (const auto event = session.Poll(NowMs()); event != boilon::ai::Event::kNone)
@@ -584,6 +651,8 @@ private:
                      boilon::ai::kEndReasonNames[static_cast<int>(session.Reason())],
                      static_cast<unsigned long long>(NowMs() - opened_ms),
                      static_cast<unsigned long long>(session.ResumeDelayMs()));
+        if (focus.PowerOffDue() && !session.Active())
+            NormalShutdown(lcd, player, runtime, persistence);
         if (gesture != Action::kNone) {
             bool supported =
                 gesture == Action::kTogglePlayback || gesture == Action::kNextTrack ||
@@ -702,6 +771,11 @@ extern "C" void app_main() {
     Check(gpio_reset_pin(GPIO_NUM_42), "PA_RESET");
     Check(gpio_set_level(GPIO_NUM_42, 0), "PA_PRELOAD");
     Check(gpio_set_direction(GPIO_NUM_42, GPIO_MODE_OUTPUT), "PA_DIRECTION");
+    // ESP-IDF 6.1 adds the internal DMA pool (SPIRAM_MALLOC_RESERVE_INTERNAL)
+    // after its startup and counts that pool's minimum as zero, so "minimal
+    // sram" read about 95 KB low. Count every internal heap from here, as 6.0
+    // did; only the statistic changes.
+    heap_caps_monitor_local_minimum_free_size_start();
     if (xTaskCreate(
             [](void*) {
                 while (true) {

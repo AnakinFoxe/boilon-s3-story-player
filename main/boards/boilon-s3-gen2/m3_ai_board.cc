@@ -15,6 +15,7 @@
 #include <functional>
 #include <mutex>
 #include <string>
+#include <vector>
 #include "application.h"
 #include "assets/lang_config.h"
 #include "board.h"
@@ -41,6 +42,8 @@ bool storage_ready = false;
 bool ota_url_set = false;
 boilon::ai::NetworkController* network = nullptr;  // The board's, once it exists.
 std::atomic<bool> back_to_story{false};  // Set by the MCP tool on the main task.
+// 2026-10-15: what the pause and power_off tools asked for; the player takes it.
+std::atomic<boilon::ai::StoryEnd> story_end{boilon::ai::StoryEnd::kNone};
 // From WifiManager's events, so AiReady() needs no lock on every player tick.
 std::atomic<bool> wifi_connected{false};
 // P5-3: the barge-in switch the user asked for; applied between conversations.
@@ -73,6 +76,20 @@ bool SaveBargeIn(bool enabled) {
     }
     if (saved)
         barge_in_byte = value;
+    return saved;
+}
+
+// 2026-10-15: each directory's play mode, written only when one changed;
+// false when it was not saved (the mode still applies until a restart).
+bool SavePlayModes(const std::vector<uint8_t>& bytes) {
+    namespace card = boilon::ai::card;
+    nvs_handle_t handle;
+    bool saved = storage_ready && nvs_open(card::kModesNamespace, NVS_READWRITE, &handle) == ESP_OK;
+    if (saved) {
+        saved = nvs_set_blob(handle, card::kModesKey, bytes.data(), bytes.size()) == ESP_OK &&
+                nvs_commit(handle) == ESP_OK;
+        nvs_close(handle);
+    }
     return saved;
 }
 
@@ -345,6 +362,7 @@ public:
                     return std::unexpected(reply.text);
                 return reply.text;
             });
+        AddPlayerTools();
     }
 
     std::string GetBoardType() override { return "wifi"; }
@@ -389,6 +407,55 @@ public:
     }
 
 private:
+    // 2026-10-15: the play mode, pause and power-off tools.
+    void AddPlayerTools() {
+        McpServer::GetInstance().AddTool(
+            "self.story.set_play_mode",
+            "Set how a directory of the story player goes on after each file (播放模式), when "
+            "the user asks (for example: 随机播放, 单曲循环, 循环播放, 顺序播放). mode: order "
+            "(顺序播放, stops after the last file; the default), loop (循环播放, the whole "
+            "directory without end), single (单曲循环, the same file again and again), shuffle "
+            "(随机播放, random order without end). directory: a name from self.story.list; "
+            "empty means the one playing now, or the one just picked with self.story.play. Each "
+            "directory keeps its mode, also after a restart; self.story.list shows the modes. "
+            "The conversation goes on.",
+            PropertyList({Property("mode", kPropertyTypeString),
+                          Property("directory", kPropertyTypeString, std::string())}),
+            [](const PropertyList& properties) -> ToolResult {
+                std::vector<uint8_t> bytes;
+                const auto reply = boilon::ai::card::Card::Shared().SetMode(
+                    properties["directory"].value<std::string>(),
+                    properties["mode"].value<std::string>(), bytes);
+                if (!reply.ok)
+                    return std::unexpected(reply.text);
+                ESP_LOGI(kTag, "Play mode %s, saved=%d",
+                         properties["mode"].value<std::string>().c_str(),
+                         bytes.empty() ? -1 : SavePlayModes(bytes));
+                return reply.text;
+            });
+        McpServer::GetInstance().AddTool(
+            "self.story.pause",
+            "Stop the story for now when the child asks (for example: 先别放了, 暂停, 停一下, "
+            "不听了). The conversation ends when you finish this answer and the story stays "
+            "paused until the child presses the top key, so say one short sentence.",
+            PropertyList(), [](const PropertyList&) -> ToolResult {
+                if (!boilon::ai::card::Card::Shared().Published())
+                    return std::unexpected(std::string(boilon::ai::card::kNoCard));
+                story_end = boilon::ai::StoryEnd::kPause;
+                return std::string(
+                    R"({"story":"stays paused","starts":"when you finish this answer"})");
+            });
+        McpServer::GetInstance().AddTool(
+            "self.story.power_off",
+            "Turn the story player off when the user asks (for example: 关机, 关掉故事机). "
+            "Progress is saved and it turns off when you finish this answer, so say goodbye in "
+            "one short sentence.",
+            PropertyList(), [](const PropertyList&) -> ToolResult {
+                story_end = boilon::ai::StoryEnd::kPowerOff;
+                return std::string(R"({"power":"off","starts":"when you finish this answer"})");
+            });
+    }
+
     WifiPort port_;
     boilon::ai::NetworkController controller_;
 };
@@ -465,5 +532,25 @@ bool AiReady() {
 }
 
 bool TakeBackToStory() { return back_to_story.exchange(false); }
+
+StoryEnd TakeStoryEnd() { return story_end.exchange(StoryEnd::kNone); }
+
+// What NVS holds for the play modes; nothing when it cannot be read.
+std::vector<uint8_t> ReadPlayModes() {
+    std::vector<uint8_t> bytes;
+    nvs_handle_t handle;
+    if (nvs_open(card::kModesNamespace, NVS_READONLY, &handle) != ESP_OK)
+        return bytes;
+    size_t size = 0;
+    if (nvs_get_blob(handle, card::kModesKey, nullptr, &size) == ESP_OK &&
+        size <= 1 + 9 * card::kMaxSaved) {
+        bytes.resize(size);
+        if (nvs_get_blob(handle, card::kModesKey, bytes.data(), &size) != ESP_OK ||
+            size != bytes.size())
+            bytes.clear();
+    }
+    nvs_close(handle);
+    return bytes;
+}
 }  // namespace boilon::ai
 #endif

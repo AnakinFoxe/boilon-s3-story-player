@@ -8,7 +8,7 @@ A 故事卡、字幕关；设计说明见 [P5_1_PIXEL_UI.md](../P5_1_PIXEL_UI.md
 
 ## 播放页 · A 故事卡（默认）
 
-标题优先。状态栏、25 段进度条和时间行是 A、C 共用的；AI 就绪时右上角有喵喵头像。
+标题优先。状态栏、25 段进度条和时间行是 A、C 共用的；AI 就绪时右上角有喵喵头像；不是顺序播放时状态栏有播放模式图标。
 
 <table>
 <tr>
@@ -24,6 +24,11 @@ A 故事卡、字幕关；设计说明见 [P5_1_PIXEL_UI.md](../P5_1_PIXEL_UI.md
 <tr>
 <td align="center"><img src="tofu-paper-card.png" width="240" alt="字库外的字显示方框"><br>字库外的字显示方框</td>
 <td align="center"><img src="battery-unknown-paper-card.png" width="240" alt="电量未知"><br>电量未知</td>
+<td align="center"><img src="mode-loop-paper-card.png" width="240" alt="目录循环（状态栏有图标）"><br>目录循环（状态栏有图标）</td>
+</tr>
+<tr>
+<td align="center"><img src="mode-single-paper-card.png" width="240" alt="单曲循环"><br>单曲循环</td>
+<td align="center"><img src="mode-shuffle-paper-card.png" width="240" alt="随机播放"><br>随机播放</td>
 </tr>
 </table>
 
@@ -40,6 +45,7 @@ A 故事卡、字幕关；设计说明见 [P5_1_PIXEL_UI.md](../P5_1_PIXEL_UI.md
 <tr>
 <td align="center"><img src="end-paper-cat.png" width="240" alt="目录播完"><br>目录播完</td>
 <td align="center"><img src="offline-paper-cat.png" width="240" alt="AI 不在线、电量低"><br>AI 不在线、电量低</td>
+<td align="center"><img src="mode-shuffle-paper-cat.png" width="240" alt="随机播放"><br>随机播放</td>
 </tr>
 </table>
 

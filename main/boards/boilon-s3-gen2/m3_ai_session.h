@@ -11,6 +11,9 @@ enum class Phase { kOff, kEntering, kActive, kExiting };
 enum class EndReason { kNone, kButton, kTool, kServer, kNotStarted, kStoryBusy, kPlay };
 constexpr const char* kEndReasonNames[] = {"none",        "button",     "tool", "server",
                                            "not_started", "story_busy", "play"};
+// 2026-10-15: 喵喵 was asked to keep the story paused or to power off once the
+// conversation ends (the pause and power_off tools).
+enum class StoryEnd : uint8_t { kNone, kPause, kPowerOff };
 // The story releases its decoder within kReleaseMs; Application leaves idle
 // within kStartMs of the request; a close request is repeated every kRetryMs;
 // a goodbye the server ended with may finish playing for kFarewellMs.
