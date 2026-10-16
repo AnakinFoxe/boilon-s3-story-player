@@ -106,6 +106,8 @@
 - M7 第二次 SD 升级那次的日志里，最低 120,283 bytes；
 - v1.2.1 换到 ESP-IDF 6.1 后，AI 变体内部 SRAM 的静态占用（`esp_idf_size` 的 DIRAM）多 2,160 bytes；
 - v1.3.0 的联调（测试版 v1.2.91，ESP-IDF 6.1，统计已修正，见下文）：开机约 200 秒、三次对话，最低 117,351 bytes。
+- v1.4.0 的联调（测试版 v1.3.90 到 v1.3.92，三轮共约 8 分钟、九次对话）：最低 116,751 bytes；DIRAM 145,928 bytes，比 v1.3.0
+  多 32 bytes。
 
 日志里看这个数：上游 `SystemInfo` 定期打印 `free sram: … minimal sram: …`。前者是当前空闲的内部 SRAM，后者是开机以来的最低值。
 
