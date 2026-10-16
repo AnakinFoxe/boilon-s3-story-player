@@ -136,8 +136,8 @@ int main() {
 }
 ''')
 
-    def test_library_main_connects_short_volume_gestures_to_codec(self):
-        source = (ROOT / "main/boards/boilon-s3-gen2/m2_library_main.cc").read_text()
+    def test_player_connects_short_volume_gestures_to_codec(self):
+        source = (ROOT / "main/boards/boilon-s3-gen2/m3_ai_main.cc").read_text()
         branch = re.search(
             r"if\s*\(gesture == Action::kVolumeUp \|\| gesture == Action::kVolumeDown\)\s*\{([^}]+)\}",
             source,

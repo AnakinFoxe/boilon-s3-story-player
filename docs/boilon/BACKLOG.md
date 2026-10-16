@@ -11,3 +11,12 @@
 - **跳过片头**：按目录记一个秒数，从头开始的文件直接从那里放。
 - **熄屏**：声音照放、按任意键亮屏；睡前不亮，也省电。
 - **音量上限**：设备分不清是谁在说话，孩子也能让喵喵把上限调高；要管用，得让「调高上限」只能用按键组合。
+
+## 2026-10-16 退役离线变体的第二步
+
+只离线的变体已经不再构建和发布（构建、发布和文档在 2026-10-16 拆掉，AI 固件逐字节不变）。下面这些代码只给它用，却编进了
+AI 固件，删掉会改变 AI 固件的字节，所以随下一批要上机测的固件改动一起删、一起测：
+
+- 上游文件 `main/audio/audio_service.h`、`audio_service.cc` 里的 `InitializePlaybackOnly()` 和 7 处 `playback_only_` 分支，
+  连同 `main/audio/README.md` 里对它的说明、主机测试 `test_playback_only_host` 和 `scripts/tests/fakes/playback_only/`。
+- `m2_local_codec.h` 里 `#if CONFIG_BOILON_S3_GEN2_AI` 的 `#else` 分支（不建 ES7210 的那一路）。

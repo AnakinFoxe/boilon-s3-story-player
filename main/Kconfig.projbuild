@@ -659,10 +659,7 @@ endchoice
 choice BOILON_S3_GEN2_DIAGNOSTIC_STAGE
     prompt "BOILON S3 Gen2 firmware variant"
     depends on BOARD_TYPE_BOILON_S3_GEN2
-    default BOILON_S3_GEN2_LOCAL_LIBRARY
-
-    config BOILON_S3_GEN2_LOCAL_LIBRARY
-        bool "M2 local library (read-only SD, track controls, no network)"
+    default BOILON_S3_GEN2_AI
 
     config BOILON_S3_GEN2_AI
         bool "M3 AI variant (XiaoZhi Application beside the offline player)"

@@ -2,7 +2,7 @@
 
 namespace boilon::release {
 
-// Printed at boot by both variants. Bump the version for every build that goes
+// Printed at boot. Bump the version for every build that goes
 // onto the device; the git tag is the same text with "-" for the space
 // (boilon-ai-player-v1.0.0). Upstream's PROJECT_VER, which XiaoZhi's server and
 // console see, stays unchanged.

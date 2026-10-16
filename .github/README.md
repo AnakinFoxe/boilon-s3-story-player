@@ -29,31 +29,26 @@ BOILON S3 二代儿童故事机的非官方固件，基于 [78/xiaozhi-esp32](ht
 功能、按键和硬件的细节见[板子说明](../main/boards/boilon-s3-gen2/README.md)。屏幕上的像素猫叫喵喵；它说话的角色和声音在
 xiaozhi.me 的智能体里设置。
 
-## 两个变体
-
-| 变体 | 发布文件 | 说明 |
-| --- | --- | --- |
-| AI 变体 | `boilon-ai-player-vX.Y.Z.bin` | 日常用：故事播放器加喵喵；能从 TF 卡升级 |
-| 只离线 | `boilon-ai-player-vX.Y.Z-offline.bin` | 后备：只有故事播放器，不联网；升级要用 USB |
-
 ## 刷机
 
-固件在 [Releases](https://github.com/AnakinFoxe/boilon-s3-story-player/releases) 里。第一次要用 USB：先整片备份，再写入，出了
-问题用自己的备份刷回，步骤见[刷机说明](../docs/boilon/FLASHING.md)。之后 AI 变体从 TF 卡升级。
+固件在 [Releases](https://github.com/AnakinFoxe/boilon-s3-story-player/releases) 里，文件名是 `boilon-ai-player-vX.Y.Z.bin`。
+第一次要用 USB：先整片备份，再写入，出了问题用自己的备份刷回，步骤见[刷机说明](../docs/boilon/FLASHING.md)。之后从 TF 卡升级。
+
+没存过 Wi-Fi 时，它就是只在本地放故事的播放器：不开 Wi-Fi，也不会自己打开热点。v1.4.0 及更早的 Release 还附有只离线的变体
+`-offline.bin`，之后不再提供（2026-10-16）。
 
 ## 自己编译
 
 - ESP-IDF v6.1（上游最低要求 v6.0.1、推荐 v6.1）。本仓库发布的固件从 v1.2.1 起用 v6.1 编译（v1.2.0 用 v6.0.2），
-  都在设备上验证过；用别的 IDF 版本编出的固件没有验证过。
-- AI 变体：`python3 scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-ai`；只离线：把名字换成
-  `boilon-s3-gen2-local-library`。产物是 `build/xiaozhi.bin`。构建可复现：ARM 机器上编出的文件逐字节
-  一致；x86 机器（如 GitHub 的 CI）编出的只差固件头里的 ELF 哈希和两个校验值。
+  都在设备上验证过（只离线的变体除外）；用别的 IDF 版本编出的固件没有验证过。
+- `python3 scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-ai`，产物是 `build/xiaozhi.bin`。构建可复现：ARM 机器上编出
+  的文件逐字节一致；x86 机器（如 GitHub 的 CI）编出的只差固件头里的 ELF 哈希和两个校验值。
 - 主机测试：`python3 -m unittest discover -s scripts/tests`。
 - 只用 `scripts/build.py` 构建，不要用 `idf.py flash`，原因见板子说明「构建与刷写护栏」。
 
 ## 文档
 
-- [板子说明](../main/boards/boilon-s3-gen2/README.md)：硬件与引脚、两个变体、播放器、按键、SD 卡升级、构建护栏。
+- [板子说明](../main/boards/boilon-s3-gen2/README.md)：硬件与引脚、AI 变体、播放器、按键、SD 卡升级、构建护栏。
 - [刷机说明](../docs/boilon/FLASHING.md)：备份、写入、刷回。
 - [产品设计](../docs/boilon/DESIGN.md)、[视觉原则](../docs/boilon/UI_STYLE.md)、[像素界面](../docs/boilon/P5_1_PIXEL_UI.md)与
   [每个画面的设计图](../docs/boilon/p5_1_gallery/README.md)。

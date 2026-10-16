@@ -36,8 +36,8 @@
 #include "p5_1_ui_view.h"
 
 // XiaoZhi's Application owns the main task and the offline player runs in its
-// own task. The player orchestration below mirrors m2_library_main.cc (the
-// offline-only variant); change the two together.
+// own task. Until v1.4.0 an offline-only variant had its own copy of the player
+// orchestration below; that variant is retired.
 
 #ifndef BOILON_M2_RESUME
 #define BOILON_M2_RESUME 1

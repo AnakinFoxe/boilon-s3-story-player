@@ -29,16 +29,17 @@ ROM 下载模式下没有程序保持 GPIO15，松开电源键就会断电。用
 `hard_reset` 会停在下载模式；要让它离开，用 esptool 的 `--after watchdog_reset` 关机，再按电源键开机。备份、写入和刷回的
 完整步骤见[刷机说明](../../../docs/boilon/FLASHING.md)。
 
-## 两个变体
-
-### AI 变体：`boilon-s3-gen2-ai`
+## AI 变体：`boilon-s3-gen2-ai`
 
 ```sh
 python3 scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-ai
 ```
 
-日常使用的版本。上游小智 `Application` 跑主循环，本板的故事播放器在独立任务里运行（[`m3_ai_main.cc`](m3_ai_main.cc)），播放
-功能和按键与离线变体一致（见下文「播放器」）。
+本板唯一的变体。上游小智 `Application` 跑主循环，本板的故事播放器在独立任务里运行（[`m3_ai_main.cc`](m3_ai_main.cc)，见下文
+「播放器」）。没存过 Wi-Fi 时，它就是只在本地放故事的播放器。
+
+只离线的变体 `boilon-s3-gen2-local-library` 已经退役（2026-10-16）：发到 v1.4.0 为止，之后不再构建和发布。它没有播放模式、
+清除进度和 TF 卡升级，2026-10-10 之后也没有装进设备试过。
 
 联网与激活：
 
@@ -103,7 +104,7 @@ python3 scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-ai
 这些工具回错误前，把双引号换成单引号、反斜杠换成斜杠：上游把错误文字原样拼进发给服务器的 JSON，一个双引号就会让服务器断开
 连接，对话卡在「说话中」（2026-10-16 联调发现）。
 
-播放模式（2026-10-15，AI 变体；离线变体始终顺序播放）：
+播放模式（2026-10-15）：
 
 - 每个目录各记各的，没设过的是顺序播放：放完一个接下一个，目录最后一个放完停下。目录循环：最后一个放完回到第一个，按键
   上一首、下一首首尾相接。单曲循环：放完从头再放这一个；按键照样切到上一个或下一个（首尾相接），然后循环它；放不出来的文件
@@ -132,20 +133,10 @@ python3 scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-ai
 双击开始对话；中、底短按调音量；同时长按中间和底部约 5 秒打开配网热点；顶部长按关机。音量从 60 开始（播放中出错时沿用当时
 的音量），不保存。不做热插拔：插卡后要重新开机才播放。规则在 [`m3_ai_device.h`](m3_ai_device.h)（主机测试 `test_m3_ai_device`）。
 
-AI 变体另有两处保护：「没有故事」页也按播放器的规则自动关机（对话中、上游在放推送的声音时都不算闲置）；上游连续停在「升级中」
+另有两处保护：「没有故事」页也按播放器的规则自动关机（对话中、上游在放推送的声音时都不算闲置）；上游连续停在「升级中」
 满 60 秒（本固件不接受服务器下发的固件升级，上游失败后不退出这个状态），就像长按一样保存进度并关机。
 
-### 离线变体：`boilon-s3-gen2-local-library`
-
-```sh
-python3 scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-local-library
-```
-
-只有故事播放器的后备版本。入口是 [`m2_library_main.cc`](m2_library_main.cc) 里的板级 `app_main`：只编入只播放的
-`AudioService`、`LocalMp3Player` 和 `main/media/`，不编入网络、OTA、协议或小智 `Application`，也不启用麦克风。顶部双击只显示
-AI 离线提示，不打断播放。它不能从 SD 卡升级，每次都要用 USB 写入。
-
-## 播放器（两个变体共用）
+## 播放器
 
 - 媒体：SD 卡 1 线、20 MHz、只读挂载 FAT32；扫描根目录和一级目录，按自然顺序排列，识别 MP3 和 WAV。WAV 由播放器直接读 PCM
   （[`main/media/wav_format.h`](../../media/wav_format.h)）：整数 8–32 位或 32 位浮点、单声道或立体声、8–48 kHz，总时长取自
@@ -178,29 +169,29 @@ AI 离线提示，不打断播放。它不能从 SD 卡升级，每次都要用 
 | 操作 | 播放器中的行为 |
 | --- | --- |
 | 顶部短按 | 暂停／继续 |
-| 顶部双击 | AI 变体：和喵喵对话；离线变体：显示 AI 离线提示，不打断播放 |
+| 顶部双击 | 和喵喵对话；AI 不在线时只提示「喵喵暂时不在线」，不打断播放 |
 | 顶部长按约 2 秒 | 保存断点后关机 |
 | 中间／底部短按 | 音量 +5／−5 |
 | 中间长按约 0.8 秒 | 上一首（目录第一个文件上不动作；循环和单曲循环时首尾相接，随机时回到刚才那个） |
 | 底部长按约 0.8 秒 | 下一首（循环和单曲循环时首尾相接，随机时再随机一个） |
 | 按住顶部，在关机触发前点中间／底部 | 后退／前进 30 秒，可连点累计 |
 | 同时短按中间和底部 | 打开目录选择：中间往上、底部往下，顶部确认，约 5 秒无操作自动取消 |
-| 同时长按中间和底部约 5 秒（AI 变体） | 打开配网热点 |
+| 同时长按中间和底部约 5 秒 | 打开配网热点 |
 
 ## 版本与 SD 卡升级
 
-两个变体开机都打印版本名（[`m6_release.h`](m6_release.h)，例如 `boilon-ai-player v1.3.0`），「正在检查」页底部也显示版本号。
+开机打印版本名（[`m6_release.h`](m6_release.h)，例如 `boilon-ai-player v1.3.0`），「正在检查」页底部也显示版本号。
 
 AI 变体开机挂上 SD 卡后、扫描之前，若卡的根目录有比自己新的 `boilon-ai-player-vX.Y.Z.bin`，就写进另一个 OTA 槽、校验后切换
 并重启（规则在 [`m7_sd_update.h`](m7_sd_update.h)，写入在 [`m7_sd_update_esp.h`](m7_sd_update_esp.h)）。屏幕显示「正在升级」、
 版本和进度，约半分钟到一分钟；新版本先显示约 3 秒「升级完成 · 现在是 vX.Y.Z」，启动完成后在 `PENDING_VERIFY` 时确认自己。
-新版本一开机就崩溃时，原厂 Bootloader 在下次开机退回原来的版本（新槽以 `PENDING_VERIFY` 启动已经实测，退回这一步没有实测）。电量低于 20%、版本不比设备上的新、文件名不对（包括离线变体的
+新版本一开机就崩溃时，原厂 Bootloader 在下次开机退回原来的版本（新槽以 `PENDING_VERIFY` 启动已经实测，退回这一步没有实测）。电量低于 20%、版本不比设备上的新、文件名不对（包括以前只离线变体的
 `-offline.bin`）、文件读不出来或不是 app 镜像时不升级，照常开机。这是本板唯一由固件自己写 app 槽和 `otadata` 的路径，上游的
 `FIRMWARE_UPGRADE_ENABLED` 仍关闭。
 
 ## 构建与刷写护栏
 
-只用 `python3 scripts/build.py boilon-s3-gen2 --name <变体名>` 构建。所有变体都是 app-only：构建脚本只发布 `build/xiaozhi.bin`，
+只用 `python3 scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-ai` 构建。固件是 app-only：构建脚本只发布 `build/xiaozhi.bin`，
 并主动移除陈旧的 `build/merged-binary.bin` 和自动生成的 `*flash*args*` 清单。IDF 在构建输出中仍可能打印通用刷写提示，直接
 执行 flash target 也会重新生成清单；不要照着做。直接运行 `idf.py build`、`idf.py reconfigure`、`idf.py merge-bin` 或任何
 flash target 都会绕过 app-only 清理，同样不要用。
