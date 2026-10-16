@@ -44,7 +44,6 @@ jobs:
             scripts.tests.test_boilon_gen2_build_guard \
             scripts.tests.test_media_catalog_host \
             scripts.tests.test_local_mp3_host \
-            scripts.tests.test_playback_only_host \
             scripts.tests.test_m3_ai_host \
             scripts.tests.test_m3_ai_network \
             scripts.tests.test_m3_ai_session \

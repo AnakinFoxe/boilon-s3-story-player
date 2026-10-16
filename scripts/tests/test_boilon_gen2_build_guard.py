@@ -230,7 +230,7 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
 
         self.assertTrue(source.startswith('#include "sdkconfig.h"\n#if CONFIG_BOILON_S3_GEN2_AI\n'))
         for forbidden in ("nvs_flash_erase(", "esp_wifi_init(", "esp_ota_set_boot_partition(",
-                          "esp_ota_mark_app_valid_cancel_rollback(", "InitializePlaybackOnly(",
+                          "esp_ota_mark_app_valid_cancel_rollback(",
                           # The player never drives Application's state machine.
                           "SetDeviceState(", "Schedule(", "ToggleChatState(", "StartListening(",
                           "PlaySound(", "Alert(", "ResetProtocol(", "AbortSpeaking("):
@@ -307,7 +307,10 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
         self.assertNotIn("ESP_LOG", device)
         codec = (board_dir / "m2_local_codec.h").read_text(encoding="utf-8")
         self.assertEqual(codec.count("es7210_codec_new("), 1)
-        guarded = codec.split("#if CONFIG_BOILON_S3_GEN2_AI\n", 1)[1].split("#else\n", 1)[0]
+        # The ES7210 path no longer has an offline-only #else (retired 2026-10-16).
+        self.assertNotIn("#else\n", codec)
+        guarded = codec.split("#if CONFIG_BOILON_S3_GEN2_AI\n        audio_codec_i2c_cfg_t", 1)[1]
+        guarded = guarded.split("#endif\n", 1)[0]
         self.assertIn("es7210_codec_cfg_t adc = {};", guarded)
         self.assertIn("mic_ = adc.ctrl_if ? es7210_codec_new(&adc) : nullptr;", guarded)
         self.assertIn("boilon::ai::PollNetwork(now)", source)

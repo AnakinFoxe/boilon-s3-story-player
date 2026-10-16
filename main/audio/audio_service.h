@@ -121,12 +121,6 @@ public:
     ~AudioService();
 
     void Initialize(AudioCodec* codec);
-    // Fresh instance only; Codec must outlive this service and its tasks.
-    // Configures PCM output without input, AFE or Opus. Call Start() once on
-    // success; Stop() is terminal in this mode (no task restart or mode switch).
-    // Only the local PCM producer is supported; voice/Opus/test/OGG entry points
-    // stay disabled. Initialization and Start/Stop are single-owner operations.
-    bool InitializePlaybackOnly(AudioCodec* codec);
     void Start();
     void Stop();
     void EncodeWakeWord();
@@ -232,8 +226,6 @@ private:
     bool device_aec_enabled_ = false;
 #endif
     std::atomic<bool> service_stopped_{true};
-    bool playback_only_ = false;
-    bool playback_only_ready_ = false;
     std::atomic<bool> audio_input_need_warmup_{false};
 
     esp_timer_handle_t audio_power_timer_ = nullptr;
@@ -247,7 +239,6 @@ private:
     bool InitializeAudioEngine();
     void SetDecodeSampleRate(int sample_rate, int frame_duration);
     void CheckAndUpdateAudioPowerState();
-    bool CreateAudioPowerTimer();
     bool IsPlaybackDrainedLocked() const;
     bool MarkPlaybackDrainedLocked();
 };

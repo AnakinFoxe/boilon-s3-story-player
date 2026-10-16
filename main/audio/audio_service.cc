@@ -46,10 +46,6 @@ AudioService::~AudioService() {
 }
 
 void AudioService::Initialize(AudioCodec* codec) {
-    if (playback_only_) {
-        ESP_LOGE(TAG, "Cannot switch a playback-only service to voice mode");
-        return;
-    }
     codec_ = codec;
     codec_->Start();
 
@@ -104,28 +100,6 @@ void AudioService::Initialize(AudioCodec* codec) {
         }
     });
 
-    CreateAudioPowerTimer();
-}
-
-bool AudioService::InitializePlaybackOnly(AudioCodec* codec) {
-    if (!codec || !event_group_ || codec_ || audio_power_timer_ ||
-        !service_stopped_.load() || codec->output_channels() != 1 ||
-        codec->output_sample_rate() < 8000 || codec->output_sample_rate() > 48000) {
-        return false;
-    }
-    // Latch this mode before any initialization effect; failures cannot be
-    // retried or switched to the full voice pipeline on this instance.
-    playback_only_ = true;
-    codec_ = codec;
-    if (!CreateAudioPowerTimer()) {
-        return false;
-    }
-    codec_->Start();
-    playback_only_ready_ = true;
-    return true;
-}
-
-bool AudioService::CreateAudioPowerTimer() {
     esp_timer_create_args_t audio_power_timer_args = {
         .callback =
             [](void* arg) {
@@ -137,32 +111,10 @@ bool AudioService::CreateAudioPowerTimer() {
         .name = "audio_power_timer",
         .skip_unhandled_events = true,
     };
-    return esp_timer_create(&audio_power_timer_args, &audio_power_timer_) == ESP_OK;
+    esp_timer_create(&audio_power_timer_args, &audio_power_timer_);
 }
 
 void AudioService::Start() {
-    if (playback_only_) {
-        if (!playback_only_ready_) {
-            return;
-        }
-        playback_only_ready_ = false;  // One start attempt; Stop is terminal.
-        service_stopped_.store(false);
-        if (esp_timer_start_periodic(audio_power_timer_, 1000000) != ESP_OK) {
-            service_stopped_.store(true);
-            ESP_LOGE(TAG, "Failed to start playback power timer");
-            return;
-        }
-        if (xTaskCreate([](void* arg) {
-                auto* service = static_cast<AudioService*>(arg);
-                service->AudioOutputTask();
-                vTaskDelete(nullptr);
-            }, "audio_output", 4096, this, 4, &audio_output_task_handle_) != pdPASS) {
-            service_stopped_.store(true);
-            esp_timer_stop(audio_power_timer_);
-            ESP_LOGE(TAG, "Failed to create playback output task");
-        }
-        return;
-    }
     service_stopped_.store(false);
     xEventGroupClearBits(event_group_, AS_EVENT_AUDIO_TESTING_RUNNING | AS_EVENT_WAKE_WORD_RUNNING |
                                            AS_EVENT_AUDIO_PROCESSOR_RUNNING |
@@ -219,9 +171,6 @@ void AudioService::Start() {
 }
 
 void AudioService::Stop() {
-    if (playback_only_) {
-        playback_only_ready_ = false;
-    }
     esp_timer_stop(audio_power_timer_);
     service_stopped_.store(true);
     if (event_group_ != nullptr) {
@@ -248,9 +197,6 @@ void AudioService::Stop() {
 }
 
 bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, int samples) {
-    if (playback_only_) {
-        return false;
-    }
     if (!codec_->input_enabled()) {
         esp_timer_stop(audio_power_timer_);
         esp_timer_start_periodic(audio_power_timer_, AUDIO_POWER_CHECK_INTERVAL_MS * 1000);
@@ -758,9 +704,6 @@ void AudioService::EndLocalPlayback(uint64_t session) {
 }
 
 bool AudioService::PushPacketToDecodeQueue(std::unique_ptr<AudioStreamPacket> packet, bool wait) {
-    if (playback_only_) {
-        return false;
-    }
     std::unique_lock<std::mutex> lock(audio_queue_mutex_);
     if (local_playback_active_) {
         return false;
@@ -890,9 +833,6 @@ void AudioService::EnableVoiceProcessing(bool enable) {
 }
 
 void AudioService::EnableAudioTesting(bool enable) {
-    if (playback_only_) {
-        return;
-    }
     ESP_LOGI(TAG, "%s audio testing", enable ? "Enabling" : "Disabling");
     if (enable) {
         xEventGroupSetBits(event_group_, AS_EVENT_AUDIO_TESTING_RUNNING);
@@ -927,9 +867,6 @@ void AudioService::EnableDeviceAec(bool enable) {
 void AudioService::SetCallbacks(AudioServiceCallbacks& callbacks) { callbacks_ = callbacks; }
 
 void AudioService::PlaySound(const std::string_view& ogg) {
-    if (playback_only_) {
-        return;
-    }
     if (!codec_->output_enabled()) {
         esp_timer_stop(audio_power_timer_);
         esp_timer_start_periodic(audio_power_timer_, AUDIO_POWER_CHECK_INTERVAL_MS * 1000);
