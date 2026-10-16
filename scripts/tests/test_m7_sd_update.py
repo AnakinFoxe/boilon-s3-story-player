@@ -146,16 +146,11 @@ class SdUpdateWiringTests(unittest.TestCase):
         self.assertLess(mount.index("boilon::sd_update::Run("), mount.index("if (boilon::sd_update::JustUpdated())"))
         self.assertLess(mount.index("boilon::ui::Page::kUpdated"), mount.index("boilon::local_library::Scan("))
 
-    def test_both_variants_put_the_version_on_their_pages(self):
-        for name in ("m3_ai_main.cc", "m2_library_main.cc"):
-            with self.subTest(name):
-                source = (BOARD / name).read_text(encoding="utf-8")
-                show = source[source.index("void ShowPage("):]
-                show = show[:show.index("\n}") + 2]
-                self.assertIn("model.version = boilon::release::kVersion;", show)
-
-    def test_only_the_ai_variant_updates_from_the_card(self):
-        self.assertNotIn("m7_sd_update", (BOARD / "m2_library_main.cc").read_text(encoding="utf-8"))
+    def test_the_pages_show_the_version(self):
+        source = (BOARD / "m3_ai_main.cc").read_text(encoding="utf-8")
+        show = source[source.index("void ShowPage("):]
+        show = show[:show.index("\n}") + 2]
+        self.assertIn("model.version = boilon::release::kVersion;", show)
 
     def test_the_file_name_is_the_release_asset_name(self):
         rules = (BOARD / "m7_sd_update.h").read_text(encoding="utf-8")

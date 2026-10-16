@@ -21,7 +21,7 @@ SPEC.loader.exec_module(build)
 
 class BoilonGen2ConfigurationTests(unittest.TestCase):
     def test_library_gpio_polarity_matches_accepted_board(self):
-        for entry in ("m2_library_main.cc", "m3_ai_main.cc"):
+        for entry in ("m3_ai_main.cc",):
             with self.subTest(entry=entry):
                 source = (ROOT / "main/boards/boilon-s3-gen2" / entry).read_text(
                     encoding="utf-8"
@@ -38,8 +38,9 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
         self.assertEqual(config["type"], "boilon-s3-gen2")
         self.assertEqual(config["target"], "esp32s3")
         variants = {variant["name"]: variant for variant in config["builds"]}
-        # The exploration-stage diagnostics were removed after dc0cc229.
-        self.assertEqual(set(variants), {"boilon-s3-gen2-local-library", "boilon-s3-gen2-ai"})
+        # The exploration-stage diagnostics were removed after dc0cc229, the
+        # offline-only local-library variant after v1.4.0.
+        self.assertEqual(set(variants), {"boilon-s3-gen2-ai"})
 
         common_options = {
             "CONFIG_FLASH_NONE_ASSETS=y",
@@ -59,12 +60,6 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
             self.assertEqual(variant["app_size_warning"], 0x380000)
             self.assertTrue(common_options.issubset(set(variant["sdkconfig_append"])))
 
-        library_options = set(variants["boilon-s3-gen2-local-library"]["sdkconfig_append"])
-        self.assertIn("CONFIG_BOILON_S3_GEN2_LOCAL_LIBRARY=y", library_options)
-        self.assertIn("CONFIG_SD_ENABLE_SDIO_SUPPORT=n", library_options)
-        self.assertIn("CONFIG_FATFS_LFN_HEAP=y", library_options)
-        self.assertIn("CONFIG_FATFS_API_ENCODING_UTF_8=y", library_options)
-        self.assertIn("CONFIG_CODEC_ES8311_SUPPORT=y", library_options)
         ai_options = set(variants["boilon-s3-gen2-ai"]["sdkconfig_append"])
         self.assertIn("CONFIG_BOILON_S3_GEN2_AI=y", ai_options)
         self.assertTrue({
@@ -79,25 +74,21 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
             # (test_m3_ai_host); upstream only creates the AFE engine at Idle.
             "CONFIG_USE_AUDIO_PROCESSOR=y",
         }.issubset(ai_options))
-        stages = ("LOCAL_LIBRARY", "AI")
         for variant in variants.values():
             options = set(variant["sdkconfig_append"])
-            self.assertEqual(sum(f"CONFIG_BOILON_S3_GEN2_{stage}=y" in options for stage in stages), 1)
-            self.assertEqual(sum(f"CONFIG_BOILON_S3_GEN2_{stage}=n" in options for stage in stages), 1)
             self.assertEqual(
-                {option.split("=", 1)[0] for option in options
-                 if option.startswith("CONFIG_BOILON_S3_GEN2_")},
-                {f"CONFIG_BOILON_S3_GEN2_{stage}" for stage in stages})
+                {option for option in options if option.startswith("CONFIG_BOILON_S3_GEN2_")},
+                {"CONFIG_BOILON_S3_GEN2_AI=y"})
 
         kconfig = (ROOT / "main/Kconfig.projbuild").read_text(encoding="utf-8")
         variant_choice = kconfig.split(
             "choice BOILON_S3_GEN2_DIAGNOSTIC_STAGE", 1
         )[1].split("endchoice", 1)[0]
         self.assertIn("depends on BOARD_TYPE_BOILON_S3_GEN2", variant_choice)
-        self.assertIn("default BOILON_S3_GEN2_LOCAL_LIBRARY", variant_choice)
-        self.assertEqual(variant_choice.count("config BOILON_S3_GEN2_"), 2)
-        self.assertIn("config BOILON_S3_GEN2_LOCAL_LIBRARY", variant_choice)
+        self.assertIn("default BOILON_S3_GEN2_AI", variant_choice)
+        self.assertEqual(variant_choice.count("config BOILON_S3_GEN2_"), 1)
         self.assertIn("config BOILON_S3_GEN2_AI", variant_choice)
+        self.assertNotIn("LOCAL_LIBRARY", kconfig)
 
         discovered = {
             item["name"]: item
@@ -116,7 +107,7 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
         defaults = []
         for path in (ROOT / "sdkconfig.defaults", ROOT / f"sdkconfig.defaults.{config['target']}"):
             defaults.extend(path.read_text(encoding="utf-8").splitlines())
-        selected = {"boilon-s3-gen2-local-library", "boilon-s3-gen2-ai"}
+        selected = {"boilon-s3-gen2-ai"}
         variants = [variant for variant in config["builds"] if variant["name"] in selected]
         self.assertEqual({variant["name"] for variant in variants}, selected)
         for variant in variants:
@@ -161,45 +152,25 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(int(rows[-1][3], 16) + int(rows[-1][4], 16), 0x1000000)
 
-    def test_local_library_entry_isolated_from_normal_runtime(self):
+    def test_retired_entries_stay_removed(self):
         cmake = (ROOT / "main/CMakeLists.txt").read_text(encoding="utf-8")
         board_dir = ROOT / "main/boards/boilon-s3-gen2"
-        source = (board_dir / "m2_library_main.cc").read_text(encoding="utf-8")
-        board_source = (board_dir / "boilon_s3_gen2_board.cc").read_text(encoding="utf-8")
 
         self.assertIn('set(BOARD_DIR "boilon-s3-gen2")', cmake)
-        self.assertIn('list(REMOVE_ITEM SOURCES "main.cc")', cmake)
-        self.assertIn("set(BOILON_S3_GEN2_DIAGNOSTIC_BUILD TRUE)", cmake)
-        self.assertIn("${BOILON_S3_GEN2_DIAGNOSTIC_ENTRY}", cmake)
-        self.assertIn(
-            'set(BOILON_S3_GEN2_DIAGNOSTIC_ENTRY "boards/boilon-s3-gen2/m2_library_main.cc")', cmake)
-        self.assertIn('set(LANG_SOUNDS "")', cmake)
-        self.assertIn('set(COMMON_SOUNDS "")', cmake)
-        self.assertIn("BOILON S3 Gen2 requires an audited diagnostic stage", cmake)
-        self.assertIn('target_link_libraries(${COMPONENT_LIB} INTERFACE "-u _Z12create_boardv")', cmake)
-        # The removed exploration entries stay removed from the build.
+        self.assertIn("BOILON S3 Gen2 requires CONFIG_BOILON_S3_GEN2_AI", cmake)
+        # The exploration entries (removed after dc0cc229), and the offline-only
+        # local-library entry with its board factory (retired after v1.4.0).
         for removed in ("diagnostic_main.cc", "p1_3_passive_main.cc", "p1_4_lcd_main.cc",
                         "p1_5_sd_main.cc", "p1_5_audio_main.cc", "p1_5_mic_main.cc",
-                        "p1_6_network_main.cc", "m2_local_main.cc"):
+                        "p1_6_network_main.cc", "m2_local_main.cc", "m2_library_main.cc",
+                        "boilon_s3_gen2_board.cc"):
             self.assertFalse((board_dir / removed).exists(), removed)
             self.assertNotIn(removed, cmake)
-        self.assertEqual(board_source.count("DECLARE_BOARD("), 1)
-        self.assertIn("TransientIdentityTag", board_source)
-        self.assertNotIn("WifiBoard", board_source)
-        for forbidden in (
-            "nvs_flash_erase(",
-            "Board::GetInstance(",
-            "Application::GetInstance(",
-            "esp_wifi_init(",
-            "esp_ota_set_boot_partition(",
-            "esp_ota_mark_app_valid_cancel_rollback(",
-        ):
-            self.assertNotIn(forbidden, source)
-
-        app_main = source.index('extern "C" void app_main()')
-        latch = source.index("rtc_gpio_set_level(BOILON_S3_GEN2_POWER_ENABLE_GPIO, 1)", app_main)
-        first_log = source.index("ESP_LOG", app_main)
-        self.assertLess(latch, first_log)
+        for symbol in ("DIAGNOSTIC_BUILD", "DIAGNOSTIC_ENTRY", "LOCAL_MP3_BUILD", "LOCAL_LIBRARY"):
+            self.assertNotIn(symbol, cmake)
+        factories = [path.name for path in sorted(board_dir.glob("*.cc"))
+                     if "DECLARE_BOARD(" in path.read_text(encoding="utf-8")]
+        self.assertEqual(factories, ["m3_ai_board.cc"])
 
     def test_ai_variant_runs_application_beside_offline_player(self):
         board_dir = ROOT / "main/boards/boilon-s3-gen2"
@@ -207,7 +178,7 @@ class BoilonGen2ConfigurationTests(unittest.TestCase):
         board_source = (board_dir / "m3_ai_board.cc").read_text(encoding="utf-8")
         source = (board_dir / "m3_ai_main.cc").read_text(encoding="utf-8")
 
-        self.assertIn("elseif(CONFIG_BOILON_S3_GEN2_AI)", cmake)
+        self.assertIn("    if(CONFIG_BOILON_S3_GEN2_AI)\n", cmake)
         ai_sources = cmake.split("if(BOILON_S3_GEN2_AI_BUILD)", 1)[1].split("endif()", 1)[0]
         self.assertIn('list(FILTER SOURCES EXCLUDE REGEX "/boards/boilon-s3-gen2/")', ai_sources)
         self.assertIn('list(REMOVE_ITEM SOURCES "main.cc")', ai_sources)

@@ -92,7 +92,7 @@ class M2ResumeWorkerTests(unittest.TestCase):
         self.scenario("forget")
 
     def test_daily_default_on_main_construction_guard(self):
-        source = (ROOT / "main/boards/boilon-s3-gen2/m2_library_main.cc").read_text()
+        source = (ROOT / "main/boards/boilon-s3-gen2/m3_ai_main.cc").read_text()
         self.assertIn("#ifndef BOILON_M2_RESUME\n#define BOILON_M2_RESUME 1\n#endif", source)
         guard = source.split("#if BOILON_M2_RESUME\n", 1)[1].split("#endif", 1)[0]
         self.assertIn("ResumeWorker resume_worker", guard)

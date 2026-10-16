@@ -1,6 +1,6 @@
 # 刷机说明：备份、写入、刷回
 
-写给别的 BOILON S3 二代用户：第一次把本固件装进设备要用 USB，之后 AI 变体从 TF 卡升级。动手前先把本文读完。
+写给别的 BOILON S3 二代用户：第一次把本固件装进设备要用 USB，之后从 TF 卡升级。动手前先把本文读完。
 
 > **风险自负。** 这不是官方固件，刷机可能让设备开不了机。一定先完整备份，出了问题用你自己的备份刷回。下面的步骤都是开发者在
 > 自己那台上做过的操作（整片备份与恢复、首次写入），整理成本文的写法之后没有逐条重测。
@@ -20,7 +20,7 @@
   4.12.0。
 - 本仓库的 [`scripts/boilon/rom_latch_gpio15.py`](../../scripts/boilon/rom_latch_gpio15.py)。
 - Release 里的文件，先用 `SHA256SUMS` 核对：
-  - `boilon-ai-player-vX.Y.Z.bin`：AI 变体；只要离线播放就用 `boilon-ai-player-vX.Y.Z-offline.bin`；
+  - `boilon-ai-player-vX.Y.Z.bin`：固件（AI 变体；不配网就只在本地放故事）；
   - `boilon-otadata-ota1.bin`：8 KB 的启动选择，让设备从 `ota_1` 启动。也可以自己生成，内容相同：
     `python3 scripts/boilon/make_otadata.py boilon-otadata-ota1.bin`。
 - 一根能传数据的 USB-C 线；设备充好电；电脑接上电源，别让它睡眠。
@@ -92,15 +92,17 @@ python3 -m esptool --chip esp32s3 --port "$PORT" --baud 115200 --before no_reset
 
 这条命令让设备受控关机：屏幕熄灭，串口消失。不要用 `hard_reset`，在这台机器上它会停在下载模式。之后按顶部键开机。
 
-- AI 变体：同时长按中间和底部约 5 秒，打开配网热点 `Boilon-XXXX`；手机连上后打开 `192.168.4.1` 填 Wi-Fi。连上之后屏幕显示
-  6 位激活码，到 xiaozhi.me 用你自己的账号添加设备。屏幕上的像素猫叫喵喵；它说话的角色和声音在 xiaozhi.me 的智能体里设置。
-- 只离线的变体：插上有故事的 TF 卡就能播。
+插上有故事的 TF 卡就能播。要和喵喵对话：同时长按中间和底部约 5 秒，打开配网热点 `Boilon-XXXX`；手机连上后打开
+`192.168.4.1` 填 Wi-Fi。连上之后屏幕显示 6 位激活码，到 xiaozhi.me 用你自己的账号添加设备。屏幕上的像素猫叫喵喵；它说话的
+角色和声音在 xiaozhi.me 的智能体里设置。不配网也能一直这样用，只是没有喵喵。
 
 ## 以后升级
 
-- AI 变体：把新版本的 `boilon-ai-player-vX.Y.Z.bin` 拷到 TF 卡根目录，文件名别改；关机插卡再开机，自动升级。规则见板子说明
-  「版本与 SD 卡升级」。
-- 只离线的变体不能从 TF 卡升级：按第 1、4、5 步用 USB 写入新版本。
+把新版本的 `boilon-ai-player-vX.Y.Z.bin` 拷到 TF 卡根目录，文件名别改；关机插卡再开机，自动升级。规则见板子说明「版本与
+SD 卡升级」。
+
+装的是 v1.4.0 或更早的只离线变体（`-offline.bin`）的：它不能从 TF 卡升级，也不再有新版本。按第 1、4、5 步用 USB 写入
+`boilon-ai-player-vX.Y.Z.bin`，以后就能从 TF 卡升级。
 
 ## 刷回备份（回到原厂）
 

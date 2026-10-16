@@ -1,4 +1,4 @@
-"""P5-8: both variants build the catalog's three copies in PSRAM.
+"""P5-8: the player builds the catalog's three copies in PSRAM.
 
 Heap placement cannot be measured on the host, so this checks the production
 wiring: two short windows (the scan, the resume worker's copies) lower the
@@ -19,13 +19,11 @@ SCAN = '    auto result = boilon::local_library::Scan("/sdcard", library);\n'
 WORKERS = {
     "m3_ai_main.cc": "    static boilon::local_library::ResumeWorker resume_worker("
                      "catalog, mounted_library, &Battery());\n",
-    "m2_library_main.cc": "    static boilon::local_library::ResumeWorker resume_worker("
-                          "catalog, mounted_library, &battery);\n",
 }
 
 
 class CatalogPsramTests(unittest.TestCase):
-    def test_both_variants_wrap_only_the_scan_and_the_copies(self):
+    def test_the_player_wraps_only_the_scan_and_the_copies(self):
         for name, worker in WORKERS.items():
             with self.subTest(variant=name):
                 source = (BOARD / name).read_text(encoding="utf-8")

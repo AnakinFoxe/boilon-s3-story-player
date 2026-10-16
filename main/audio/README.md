@@ -117,10 +117,10 @@ PCM blocks to the existing two-entry playback queue. It never writes the codec.
 protocol input is rejected until that session ends. Pause retains queued frames;
 stop/reset invalidates old frames. One already in-flight codec block may finish.
 Controls are single-owner and nonblocking; AudioService must outlive the player
-and worker. Both Boilon variants use the local session: the local-library entry
-through `InitializePlaybackOnly()`, and the AI variant's story player beside
-XiaoZhi on the normal voice-mode service. See the
-[board README](../boards/boilon-s3-gen2/README.md) for the player's behavior.
+and worker. The Boilon AI variant's story player uses the local session beside
+XiaoZhi on the normal voice-mode service. `InitializePlaybackOnly()` has had no
+caller since the offline-only local-library variant was retired after v1.4.0. See
+the [board README](../boards/boilon-s3-gen2/README.md) for the player's behavior.
 
 A file named `.wav` skips the decoder: it is read as PCM WAV (`main/media/wav_format.h`:
 8-32-bit integer or 32-bit float, mono or stereo, 8-48 kHz), and other WAV encodings

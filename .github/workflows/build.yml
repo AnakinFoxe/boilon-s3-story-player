@@ -85,7 +85,6 @@ jobs:
       fail-fast: false
       matrix:
         name:
-          - boilon-s3-gen2-local-library
           - boilon-s3-gen2-ai
     runs-on: ubuntu-latest
     container:

@@ -1,4 +1,4 @@
-"""The release name printed at boot (m6_release.h): one name in the tag format, both variants."""
+"""The release name printed at boot (m6_release.h): one name in the tag format."""
 
 import re
 import unittest
@@ -15,15 +15,12 @@ class ReleaseNameTests(unittest.TestCase):
         self.assertRegex(names[0], r"^boilon-ai-player v[0-9]+\.[0-9]+\.[0-9]+$")
         self.assertRegex(names[0].replace(" ", "-"), r"^boilon-ai-player-v[0-9]+\.[0-9]+\.[0-9]+$")
 
-    def test_both_variants_print_it_before_their_variant_line(self):
-        for name, variant in (("m3_ai_main.cc", '"M3 AI variant;'),
-                              ("m2_library_main.cc", '"Daily offline Beta;')):
-            with self.subTest(name):
-                source = (BOARD / name).read_text(encoding="utf-8")
-                self.assertEqual(source.count('#include "m6_release.h"'), 1)
-                main = source[source.index('extern "C" void app_main()'):]
-                self.assertEqual(main.count(LINE), 1)
-                self.assertLess(main.index(LINE), main.index(variant))
+    def test_the_firmware_prints_it_before_its_variant_line(self):
+        source = (BOARD / "m3_ai_main.cc").read_text(encoding="utf-8")
+        self.assertEqual(source.count('#include "m6_release.h"'), 1)
+        main = source[source.index('extern "C" void app_main()'):]
+        self.assertEqual(main.count(LINE), 1)
+        self.assertLess(main.index(LINE), main.index('"M3 AI variant;'))
 
 
 if __name__ == "__main__":

@@ -106,29 +106,23 @@ class M5PowerPolicyHostTests(unittest.TestCase):
                                     timeout=10, cwd=temporary)
             self.assertEqual(tested.returncode, 0, tested.stdout + tested.stderr)
 
-    def test_both_variants_and_the_no_story_page_feed_the_watch(self):
+    def test_the_player_and_the_no_story_page_feed_the_watch(self):
         ai = (BOARD / "m3_ai_main.cc").read_text(encoding="utf-8")
-        library = (BOARD / "m2_library_main.cc").read_text(encoding="utf-8")
         run = ai.split("[[noreturn]] void RunPlayer() {", 1)[1]
         no_story = ai.split("[[noreturn]] void NoStory(", 1)[1].split("\n}\n", 1)[0]
-        loop = library.split('extern "C" void app_main() {', 1)[1]
-        empty = library.split("[[noreturn]] void EmptyLibrary(", 1)[1].split("\n}\n", 1)[0]
-        for body in (run, loop):
-            # A reading counts once: only when the worker finished a new sample.
-            self.assertIn("if (persistence && persistence->BatterySamples() != battery_samples) {",
-                          body)
-            self.assertIn("runtime.Controller().State() != media::PlaybackState::kPlaying", body)
-            self.assertIn("? boilon::ui::Page::kLowBattery", body)
-            self.assertIn("model.toast = boilon::ui::Toast::kLowBattery;", body)
-            self.assertLess(body.index("power.Update("), body.index("lcd.Poll(now);"))
+        # A reading counts once: only when the worker finished a new sample.
+        self.assertIn("if (persistence && persistence->BatterySamples() != battery_samples) {",
+                      run)
+        self.assertIn("runtime.Controller().State() != media::PlaybackState::kPlaying", run)
+        self.assertIn("? boilon::ui::Page::kLowBattery", run)
+        self.assertIn("model.toast = boilon::ui::Toast::kLowBattery;", run)
+        self.assertLess(run.index("power.Update("), run.index("lcd.Poll(now);"))
         self.assertIn("power.Update(now, percent, idle, focus.Upgrading())", run)
         self.assertIn("!session.OwnsKeys() && !network_page", run)
-        self.assertIn("power.Update(now, percent, idle, false)", loop)
         self.assertIn("power.Update(now, percent, idle, focus.Upgrading())", no_story)
         self.assertIn("!page.Conversation().OwnsKeys() && !network_page", no_story)
         self.assertIn("NoStoryOff(lcd, off);", no_story)
         self.assertIn("percent = battery_level.load();", no_story)
-        self.assertIn("if (idle.Update(!Pressed(), NowMs()))\n            PowerOff(\"USER\");", empty)
 
 
 if __name__ == "__main__":

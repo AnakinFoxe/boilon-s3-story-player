@@ -19,6 +19,10 @@ grep -oE '[^ /()]+\.a\(' build/xiaozhi.map | sed 's/($//' | sort -u
 下载的组件版本也不变，下表的第三方部分不变。6.1 的 `COPYRIGHT.rst` 多了蓝牙 LE Audio 与 ISO 两条（改编自 Zephyr），本固件
 没有链接蓝牙协议栈，不含这两部分。
 
+2026-10-16 只离线的变体退役，之后只构建 AI 变体。离线变体链接的库一直是 AI 变体的子集（v1.4.0 的构建：76 个都在 140 个里），
+同一台机器上收集许可证时加不加它的链接映射，结果逐字节相同，所以下表不变。下表原来有一列「变体」，标明各部分编进哪个变体，
+现在都编进 AI 变体，这一列去掉了。
+
 ## 本项目与上游
 
 | 部分 | 来源 | 许可证 |
@@ -30,26 +34,26 @@ grep -oE '[^ /()]+\.a\(' build/xiaozhi.map | sed 's/($//' | sort -u
 
 | 字体 | 用在哪里 | 来源 | 许可证 |
 | --- | --- | --- | --- |
-| Noto Sans CJK，14 px 单色常用字 6845 个 | `m2_library_common_font.inc`，两个变体 | 78/xiaozhi-fonts 2.0.0（[78/noto-fonts](https://github.com/78/noto-fonts)） | SIL Open Font License 1.1（组件代码 Apache-2.0） |
+| Noto Sans CJK，14 px 单色常用字 6845 个 | `m2_library_common_font.inc` | 78/xiaozhi-fonts 2.0.0（[78/noto-fonts](https://github.com/78/noto-fonts)） | SIL Open Font License 1.1（组件代码 Apache-2.0） |
 | unscii-8 | `p5_1_ui_font.h`，由 LVGL 源码生成 | LVGL 自带 | 公有领域 |
 
 ## ESP-IDF v6.1
 
 ESP-IDF 本身是 Apache-2.0。其中编进固件的第三方部分：
 
-| 部分 | 许可证 | 变体 |
-| --- | --- | --- |
-| FreeRTOS 内核 | MIT | 两个 |
-| C 库（newlib／picolibc，`esp_libc`） | BSD 类，见 ESP-IDF `esp_libc` 的 COPYING 文件 | 两个 |
-| FatFs（ChaN） | BSD 风格 | 两个 |
-| Mbed TLS 与 TF-PSA-Crypto | Apache-2.0（与 GPL-2.0-or-later 双许可，这里按 Apache-2.0） | 两个 |
-| TLSF 内存分配器 | BSD-3-Clause | 两个 |
-| Xtensa HAL（`libxt_hal.a`，Tensilica／Cadence） | MIT | 两个 |
-| lwIP | BSD-3-Clause | AI |
-| wpa_supplicant | BSD-3-Clause | AI |
-| HTTP Parser（基于 NGINX 与 Joyent http-parser） | MIT 类，见 `http_parser/LICENSE.txt` | AI |
-| SPIFFS | MIT | AI |
-| Wi-Fi、PHY 与蓝牙基带二进制库（`libnet80211.a`、`libpp.a`、`libcore.a`、`libphy.a`、`libbtbb.a` 等） | 随 ESP-IDF 以二进制提供，Apache-2.0 | AI |
+| 部分 | 许可证 |
+| --- | --- |
+| FreeRTOS 内核 | MIT |
+| C 库（newlib／picolibc，`esp_libc`） | BSD 类，见 ESP-IDF `esp_libc` 的 COPYING 文件 |
+| FatFs（ChaN） | BSD 风格 |
+| Mbed TLS 与 TF-PSA-Crypto | Apache-2.0（与 GPL-2.0-or-later 双许可，这里按 Apache-2.0） |
+| TLSF 内存分配器 | BSD-3-Clause |
+| Xtensa HAL（`libxt_hal.a`，Tensilica／Cadence） | MIT |
+| lwIP | BSD-3-Clause |
+| wpa_supplicant | BSD-3-Clause |
+| HTTP Parser（基于 NGINX 与 Joyent http-parser） | MIT 类，见 `http_parser/LICENSE.txt` |
+| SPIFFS | MIT |
+| Wi-Fi、PHY 与蓝牙基带二进制库（`libnet80211.a`、`libpp.a`、`libcore.a`、`libphy.a`、`libbtbb.a` 等） | 随 ESP-IDF 以二进制提供，Apache-2.0 |
 
 ## 工具链运行库
 
@@ -61,31 +65,31 @@ ESP-IDF 本身是 Apache-2.0。其中编进固件的第三方部分：
 
 「乐鑫 MIT」（ESPRESSIF MIT／Espressif Modified MIT）只允许用在乐鑫的芯片上；本设备是 ESP32-S3，符合。
 
-| 组件 | 许可证 | 变体 |
-| --- | --- | --- |
-| espressif/esp_codec_dev | Apache-2.0 | 两个 |
-| espressif/esp_audio_codec（含 `libesp_audio_codec.a`、`libesp_audio_simple_dec.a` 二进制库） | 乐鑫修改版 MIT | 两个 |
-| espressif/esp_audio_effects（二进制库） | 乐鑫修改版 MIT | 两个 |
-| espressif/esp_new_jpeg（二进制库） | 乐鑫 MIT | 两个 |
-| espressif/cjson（cJSON） | MIT | 两个 |
-| espressif/esp_io_expander、esp_lcd_touch、esp_mmap_assets | Apache-2.0 | 两个 |
-| espressif2022/esp_emote_expression、esp_emote_gfx | Apache-2.0 | 两个 |
-| laride/heatshrink | ISC | 两个 |
-| lvgl/lvgl | MIT | 两个 |
-| 78/esp-ml307、uart-eth-modem、uart-uhci | Apache-2.0 | AI |
-| 78/esp-wifi-connect | MIT | AI |
-| 78/xiaozhi-fonts | Apache-2.0（字体数据 OFL-1.1，见上） | AI |
-| espressif/esp-sr（含语音前端、唤醒词等二进制库） | 乐鑫 MIT | AI |
-| espressif/esp_image_effects（二进制库）、esp_video | 乐鑫 MIT | AI |
-| espressif/esp-dsp、esp32-camera、esp_cam_sensor、esp_sccb_intf、esp_lvgl_port、mqtt、usb、led_strip | Apache-2.0 | AI |
-| espressif/adc_battery_estimation、button、knob、iot_eth、iot_usbh_cdc、iot_usbh_rndis | Apache-2.0 | AI |
-| espressif/dl_fft | MIT | AI |
+| 组件 | 许可证 |
+| --- | --- |
+| espressif/esp_codec_dev | Apache-2.0 |
+| espressif/esp_audio_codec（含 `libesp_audio_codec.a`、`libesp_audio_simple_dec.a` 二进制库） | 乐鑫修改版 MIT |
+| espressif/esp_audio_effects（二进制库） | 乐鑫修改版 MIT |
+| espressif/esp_new_jpeg（二进制库） | 乐鑫 MIT |
+| espressif/cjson（cJSON） | MIT |
+| espressif/esp_io_expander、esp_lcd_touch、esp_mmap_assets | Apache-2.0 |
+| espressif2022/esp_emote_expression、esp_emote_gfx | Apache-2.0 |
+| laride/heatshrink | ISC |
+| lvgl/lvgl | MIT |
+| 78/esp-ml307、uart-eth-modem、uart-uhci | Apache-2.0 |
+| 78/esp-wifi-connect | MIT |
+| 78/xiaozhi-fonts | Apache-2.0（字体数据 OFL-1.1，见上） |
+| espressif/esp-sr（含语音前端、唤醒词等二进制库） | 乐鑫 MIT |
+| espressif/esp_image_effects（二进制库）、esp_video | 乐鑫 MIT |
+| espressif/esp-dsp、esp32-camera、esp_cam_sensor、esp_sccb_intf、esp_lvgl_port、mqtt、usb、led_strip | Apache-2.0 |
+| espressif/adc_battery_estimation、button、knob、iot_eth、iot_usbh_cdc、iot_usbh_rndis | Apache-2.0 |
+| espressif/dl_fft | MIT |
 
-摄像头、视频、USB 主机、4G 模组和以太网等组件被上游的通用代码引用而编进 AI 变体，本板并不使用这些硬件。
+摄像头、视频、USB 主机、4G 模组和以太网等组件被上游的通用代码引用而编进固件，本板并不使用这些硬件。
 
 ## 分发
 
-每个 Release 都附 `THIRD_PARTY_LICENSES.txt`。发版工作流（`.github/workflows/boilon-release.yml`）编完两个变体后，用
+每个 Release 都附 `THIRD_PARTY_LICENSES.txt`。发版工作流（`.github/workflows/boilon-release.yml`）编完固件后，用
 `scripts/boilon/collect_licenses.py` 从这次构建实际链接的库找到所属组件，收集许可证全文：本项目的 MIT 与字体的 OFL 1.1，
 ESP-IDF 的 Apache-2.0 与 `COPYRIGHT.rst`，各组件自带的许可证文件（乐鑫 MIT、MIT／BSD／ISC 的版权声明等，相同的全文只印一次），
 以及工具链运行库的 GCC Runtime Library Exception 说明。有库找不到所属组件时，发版失败。

@@ -57,8 +57,8 @@ inline std::optional<Version> FromReleaseName(std::string_view name) {
         return std::nullopt;
     return ParseNumbers(name.substr(kReleasePrefix.size()));
 }
-// An AI release in the card's root, "boilon-ai-player-v1.2.3.bin"; the offline
-// variant ("-offline.bin") and every other name are not candidates.
+// An AI release in the card's root, "boilon-ai-player-v1.2.3.bin"; the retired
+// offline variant ("-offline.bin") and every other name are not candidates.
 inline std::optional<Version> FromFileName(std::string_view name) {
     if (name.size() <= kFilePrefix.size() + kFileSuffix.size() ||
         name.substr(0, kFilePrefix.size()) != kFilePrefix ||

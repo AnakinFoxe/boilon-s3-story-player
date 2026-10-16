@@ -1,6 +1,6 @@
 name: Release BOILON firmware
 
-# Pushing a tag boilon-ai-player-vX.Y.Z builds both variants from that commit and
+# Pushing a tag boilon-ai-player-vX.Y.Z builds the firmware from that commit and
 # drafts a GitHub Release with the files; check them, write the notes, publish.
 # A suffixed tag (boilon-ai-player-vX.Y.Z-trial1) drafts a trial release the same way.
 on:
@@ -37,7 +37,7 @@ jobs:
           esac
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Build both variants and collect the release files
+      - name: Build the firmware and collect the release files
         # As in build.yml: build the checked-in lockfile.
         env:
           IDF_COMPONENT_CHECK_NEW_VERSION: "0"
@@ -45,16 +45,13 @@ jobs:
         run: |
           source "$IDF_PATH/export.sh"
           mkdir -p dist
-          python scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-local-library
-          cp build/xiaozhi.bin "dist/boilon-ai-player-$VERSION-offline.bin"
-          cp build/xiaozhi.map offline.map
           python scripts/build.py boilon-s3-gen2 --name boilon-s3-gen2-ai
           cp build/xiaozhi.bin "dist/boilon-ai-player-$VERSION.bin"
-          python scripts/boilon/collect_licenses.py build dist/THIRD_PARTY_LICENSES.txt --map offline.map
+          python scripts/boilon/collect_licenses.py build dist/THIRD_PARTY_LICENSES.txt
           python scripts/boilon/make_otadata.py dist/boilon-otadata-ota1.bin
           cd dist
-          sha256sum "boilon-ai-player-$VERSION.bin" "boilon-ai-player-$VERSION-offline.bin" \
-            boilon-otadata-ota1.bin THIRD_PARTY_LICENSES.txt > SHA256SUMS
+          sha256sum "boilon-ai-player-$VERSION.bin" boilon-otadata-ota1.bin THIRD_PARTY_LICENSES.txt \
+            > SHA256SUMS
           cat SHA256SUMS
 
       - name: Upload the release files
