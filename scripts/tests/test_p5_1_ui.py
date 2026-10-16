@@ -200,6 +200,77 @@ int main() {
     assert(Wrap("\xe4\xb8\x80\xe4\xba\x8c\xe4\xb8\x89\xe5\x9b\x9b", style).size() == 2);
 ''', "glyphs")
 
+    def test_titles_shrink_only_as_far_as_needed(self):
+        def fit(name, text):
+            return f"    const title::Fit {name} = title::FitTitle(fonts.noto, {cpp_string(text)});\n"
+        self.run_program(
+            fit("brief", "第2集：小猫寻找月亮") +
+            fit("longer", "第10集：穿过星光闪烁的森林寻找失踪的朋友") +
+            fit("orphan", "第23回：孙悟空三打白骨精，唐僧误会把他赶走了") +
+            fit("comma", "十万个为什么：为什么天空是蓝色的，而傍晚的晚霞却是红色的呢") +
+            fit("english", "The Little Red Hen S01E05 - Who Will Bake the Bread") +
+            fit("longest", "【睡前故事】小熊阿布和他的好朋友们：大森林里的春天、夏天、秋天和冬天，"
+                "一年四季都有好玩的事情发生，小猪、小鹿和小狐狸都来了，大家一起过了快乐的一年") + r'''
+    // Sizes scale every 14 px measure, rounding down below zero as well.
+    assert(title::Scale(14, 21) == 21 && title::Scale(8, 23) == 13);
+    assert(title::Scale(-1, 28) == -2 && title::Scale(-1, 21) == -1);
+    assert(title::Lines(28) == 3 && title::Lines(24) == 3 && title::Lines(23) == 4);
+    assert(title::Lines(19) == 4 && title::Lines(18) == 5);
+    // The biggest size that shows everything; 28 px is the old 2x.
+    assert(brief.size == 28 && brief.lines.size() == 2);
+    assert(longer.size == 26 && longer.lines.size() == 3);
+    assert(comma.size == 22 && comma.lines.size() == 4);
+    for (const auto& line : comma.lines)
+        assert(line.front() != 0xff0c);  // no line starts with a comma
+    assert(orphan.size == 23 && orphan.lines.size() == 4 && orphan.lines.back().size() == 2);
+    // Every English line break took the place of a space: no word is cut.
+    assert(english.size == 23 && english.lines.size() == 4);
+    std::vector<uint32_t> joined;
+    for (const auto& line : english.lines) {
+        assert(line.front() != ' ' && line.back() != ' ');
+        if (!joined.empty())
+            joined.push_back(' ');
+        joined.insert(joined.end(), line.begin(), line.end());
+    }
+    assert(joined == Codepoints("The Little Red Hen S01E05 - Who Will Bake the Bread"));
+    // Past 18 px: five lines and an ellipsis, no comma before it.
+    assert(longest.size == 18 && longest.lines.size() == 5);
+    const auto& last = longest.lines.back();
+    assert(last.back() == 0x2026 && last[last.size() - 2] != 0xff0c);
+    // Doubling every pixel or none; otherwise each boundary stays within 1 px.
+    int cost[14] = {}, start[15];
+    title::Stretch(cost, 14, 28, -1, start);
+    for (int c = 0; c <= 14; ++c)
+        assert(start[c] == 2 * c);
+    title::Stretch(cost, 14, 14, -1, start);
+    for (int c = 0; c <= 14; ++c)
+        assert(start[c] == c);
+    cost[3] = cost[7] = 5;
+    title::Stretch(cost, 14, 21, 9, start);
+    assert(start[0] == 0 && start[14] == 21 && start[4] - start[3] == 1 && start[8] - start[7] == 1);
+    assert(2 * std::abs(14 * start[9] - 9 * 21) <= 14);
+    for (int c = 0; c < 14; ++c)
+        assert(start[c + 1] - start[c] >= 1 && start[c + 1] - start[c] <= 2 &&
+               std::abs(14 * start[c] - c * 21) < 14);
+    // At 28 px every glyph is the old 2x drawing, the missing-character box too.
+    static uint8_t old_pixels[kWidth * kHeight];
+    Canvas fitted(pixels), old(old_pixels);
+    TextStyle style;
+    style.font = &fonts.noto;
+    style.color = kText;
+    style.scale = 2;
+    for (uint32_t c = 0x4e00; c < 0x5200; ++c) {
+        fitted.Clear(kBg);
+        old.Clear(kBg);
+        title::DrawGlyph(fitted, fonts.noto, Lookup(fonts.noto, c), 100, 100, 28, kText);
+        const char utf8[] = {static_cast<char>(0xe0 | (c >> 12)),
+                             static_cast<char>(0x80 | ((c >> 6) & 63)),
+                             static_cast<char>(0x80 | (c & 63)), 0};
+        old.Text(utf8, 100, 100, style);
+        assert(std::memcmp(pixels, old_pixels, sizeof(old_pixels)) == 0);
+    }
+''', "title", prelude="#include <cstdlib>\n#include <cstring>\n")
+
     def test_refresh_sends_only_what_changed_one_strip_at_a_time(self):
         self.run_program(r'''
     FakePanel panel;
