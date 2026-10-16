@@ -124,8 +124,10 @@ public:
             return;
         // The child's words and the AI's answers stay out of the log: only the
         // screen shows them.
-        if (std::strcmp(role, "user") == 0)
+        if (std::strcmp(role, "user") == 0) {
             boilon::ai::CurrentChat().Heard(content);
+            boilon::ai::card::Card::Shared().Heard();  // Lets a forget be confirmed (2026-10-16).
+        }
         if (std::strcmp(role, "assistant") == 0)
             boilon::ai::CurrentChat().Said(content);
         if (std::strcmp(role, "system") == 0)
@@ -454,27 +456,37 @@ private:
                 story_end = boilon::ai::StoryEnd::kPowerOff;
                 return std::string(R"({"power":"off","starts":"when you finish this answer"})");
             });
-        // 2026-10-16: the player deletes the bookmarks at once; the story playing
-        // now, if among them, starts again from its first file after the answer.
+        // 2026-10-16: two calls, and the story player checks that the user spoke
+        // in between; then the player deletes the bookmarks at once, and the story
+        // playing now, if among them, starts again from its first file after the answer.
         McpServer::GetInstance().AddTool(
             "self.story.forget_progress",
             "Forget where the stories were last heard (播放进度), so they start again from the "
             "beginning, when the user asks (for example: 把西游记的进度清掉, 清除所有播放进度). "
-            "Forgotten progress cannot come back: first say exactly what will be forgotten, a "
-            "directory's name or all progress on this story player, and call this only after "
-            "the user agrees. directory: a name from self.story.list; empty means the one playing "
+            "Forgotten progress cannot come back, so it takes two calls. First call without "
+            "confirmed: nothing is forgotten yet; then ask the user, saying exactly what will be "
+            "forgotten (a directory's name, or all progress on this story player), and end your "
+            "answer. Only after the user agrees, call again with the same directory or all and "
+            "confirmed true; the story player refuses a confirmation that comes before the user "
+            "has answered. directory: a name from self.story.list; empty means the one playing "
             "now, or the one just picked with self.story.play. all: true forgets every "
-            "directory's progress. The volume and the play modes stay. When it includes the "
-            "directory playing now, the conversation ends when you finish this answer and that "
-            "directory plays from its first file's beginning (or what you just picked plays); "
-            "otherwise the conversation goes on. To hear one file from its beginning, use "
-            "self.story.play with its number instead.",
+            "directory's progress. The volume and the play modes stay. When the forgotten "
+            "progress includes the directory playing now, the conversation ends when you finish "
+            "that answer and the directory plays from its first file's beginning (or what you "
+            "just picked plays); otherwise the conversation goes on. To hear one file from its "
+            "beginning, use self.story.play with its number instead.",
             PropertyList({Property("directory", kPropertyTypeString, std::string()),
-                          Property("all", kPropertyTypeBoolean, false)}),
+                          Property("all", kPropertyTypeBoolean, false),
+                          Property("confirmed", kPropertyTypeBoolean, false)}),
             [](const PropertyList& properties) -> ToolResult {
+                const bool confirmed = properties["confirmed"].value<bool>();
                 const auto reply = boilon::ai::card::Card::Shared().ForgetProgress(
-                    properties["directory"].value<std::string>(), properties["all"].value<bool>());
-                ESP_LOGI(kTag, "Forget request %s", reply.ok ? "accepted" : "refused");
+                    properties["directory"].value<std::string>(), properties["all"].value<bool>(),
+                    confirmed);
+                ESP_LOGI(kTag, "Forget request %s",
+                         !reply.ok   ? "refused"
+                         : confirmed ? "accepted"
+                                     : "asked");
                 if (!reply.ok)
                     return std::unexpected(reply.text);
                 return reply.text;

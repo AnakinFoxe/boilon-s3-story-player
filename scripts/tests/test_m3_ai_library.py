@@ -311,53 +311,92 @@ void Modes() {
     assert(card.SetMode("凯叔西游记", "loop", saved).text == kNoCard && !card.TakeModes());
 }
 
-// 2026-10-16: what self.story.forget_progress leaves for the player and says.
+// 2026-10-16: what self.story.forget_progress says and leaves for the player.
+// It takes two calls with the user's words in between.
 void Forgets() {
     const auto catalog = Library();
     const auto xiyou = Index(catalog, "凯叔西游记"), sanguo = Index(catalog, "钱儿爸超级三国");
+    const std::string asked = R"(","then":"after the user agrees, call again with confirmed true"})";
+    const std::string not_asked =
+        "Not asked about this yet: call without confirmed first, then ask the user.";
     Card card;
-    assert(card.ForgetProgress("凯叔西游记", false).text == kNoCard && !card.TakeForget());
+    assert(card.ForgetProgress("凯叔西游记", false, false).text == kNoCard && !card.TakeForget());
     card.Publish(&catalog);
-    auto reply = card.ForgetProgress("", false);  // Nothing selected: name it, or all.
+    auto reply = card.ForgetProgress("", false, false);  // Nothing selected: name it, or all.
     assert(!reply.ok && reply.text == "Nothing is selected: name the directory.");
-    reply = card.ForgetProgress("", true);
+    reply = card.ForgetProgress("", true, false);  // Asking forgets nothing.
+    assert(reply.ok && reply.text == R"({"forgot":"nothing yet","ask":"all)" + asked);
+    assert(!card.TakeForget());
+    reply = card.ForgetProgress("", true, true);  // Confirmed in the same answer: refused.
+    assert(!reply.ok && reply.text == "The user has not answered yet: ask, wait for the answer, "
+                                      "then call again with confirmed true.");
+    assert(!card.TakeForget());
+    card.Heard();  // The user answered.
+    reply = card.ForgetProgress("", true, true);
     assert(reply.ok && reply.text == R"({"forgot":"all","conversation":"goes on"})");
     auto taken = card.TakeForget();
     assert(taken && !taken->directory && !card.TakeForget());
-    // The selected directory, or all: the conversation ends; another one: it goes on.
+    card.Heard();  // Used up: confirming again needs a new question.
+    reply = card.ForgetProgress("", true, true);
+    assert(!reply.ok && reply.text == not_asked);
+    // The selected directory, also named another way: the conversation ends.
+    // A confirmation must be for what was asked about.
     card.SetNow(std::make_pair(xiyou, size_t{7}));
-    reply = card.ForgetProgress("", false);
+    reply = card.ForgetProgress("", false, false);
+    assert(reply.text == R"({"forgot":"nothing yet","ask":"凯叔西游记)" + asked);
+    card.Heard();
+    assert(card.ForgetProgress("钱儿爸", false, true).text == not_asked);
+    assert(card.ForgetProgress("", true, true).text == not_asked);
+    reply = card.ForgetProgress("凯叔", false, true);
     assert(reply.text ==
            R"({"forgot":"凯叔西游记","conversation":"ends when you finish this answer"})");
-    taken = card.TakeForget();
-    assert(taken && taken->directory == xiyou);
-    reply = card.ForgetProgress("钱儿爸", false);
+    assert(card.TakeForget()->directory == xiyou);
+    // Another directory: it goes on. A newer question replaces an older one.
+    assert(card.ForgetProgress("凯叔西游记", false, false).ok);
+    assert(card.ForgetProgress("钱儿爸", false, false).ok);
+    card.Heard();
+    assert(card.ForgetProgress("凯叔西游记", false, true).text == not_asked);
+    reply = card.ForgetProgress("钱儿爸超级三国", false, true);
     assert(reply.text == R"({"forgot":"钱儿爸超级三国","conversation":"goes on"})");
     assert(card.TakeForget()->directory == sanguo);
-    reply = card.ForgetProgress("", true);
+    // A new conversation: nothing asked about before can be confirmed.
+    assert(card.ForgetProgress("", true, false).ok);
+    card.Heard();
+    card.NewConversation();
+    assert(card.ForgetProgress("", true, true).text == not_asked && !card.TakeForget());
+    assert(Has(card.ForgetProgress("凯叔西游记", true, false).text, R"("ask":"all")"));
+    card.Heard();  // all wins over a name, and includes the selected directory.
+    reply = card.ForgetProgress("", true, true);
     assert(reply.text == R"({"forgot":"all","conversation":"ends when you finish this answer"})");
     assert(!card.TakeForget()->directory);
-    assert(Has(card.ForgetProgress("凯叔西游记", true).text, R"("forgot":"all")"));
-    assert(!card.TakeForget()->directory);
     // A pick not taken yet is "this one"; the forget leaves the pick to the player.
-    assert(card.Play("钱儿爸超级三国", 2).ok);
-    reply = card.ForgetProgress("", false);
+    assert(card.Play("钱儿爸超级三国", 2).ok && card.ForgetProgress("", false, false).ok);
+    card.Heard();
+    reply = card.ForgetProgress("", false, true);
     assert(reply.text ==
            R"({"forgot":"钱儿爸超级三国","conversation":"ends when you finish this answer"})");
     assert(card.Take() && card.TakeForget()->directory == sanguo);
-    assert(!card.ForgetProgress("西游记", false).ok && !card.ForgetProgress("没有这个", false).ok);
-    assert(!card.TakeForget());
-    // One request waits for the player at a time: the same one or all merge.
-    assert(card.ForgetProgress("凯叔西游记", false).ok && card.ForgetProgress("凯叔", false).ok);
-    reply = card.ForgetProgress("钱儿爸超级三国", false);
+    assert(!card.ForgetProgress("西游记", false, false).ok);
+    assert(!card.ForgetProgress("没有这个", false, true).ok && !card.TakeForget());
+    // One request waits for the player at a time: the same one or all merge;
+    // another stays asked about and goes through once the player took the first.
+    const auto confirm = [&card](std::string_view name, bool all) {
+        assert(card.ForgetProgress(name, all, false).ok);
+        card.Heard();
+        return card.ForgetProgress(name, all, true);
+    };
+    assert(confirm("凯叔西游记", false).ok && confirm("凯叔", false).ok);
+    reply = confirm("钱儿爸超级三国", false);
     assert(!reply.ok && reply.text == "Still forgetting the last directory: try again in a moment.");
-    assert(card.ForgetProgress("钱儿爸超级三国", true).ok);
+    assert(card.TakeForget()->directory == xiyou);
+    assert(card.ForgetProgress("钱儿爸超级三国", false, true).ok);
+    assert(confirm("", true).ok);
     taken = card.TakeForget();
     assert(taken && !taken->directory && !card.TakeForget());
-    assert(card.ForgetProgress("", true).ok && card.ForgetProgress("钱儿爸超级三国", false).ok);
+    assert(confirm("", true).ok && confirm("钱儿爸超级三国", false).ok);
     assert(!card.TakeForget()->directory && !card.TakeForget());
     card.Publish(nullptr);
-    assert(card.ForgetProgress("", true).text == kNoCard && !card.TakeForget());
+    assert(card.ForgetProgress("", true, false).text == kNoCard && !card.TakeForget());
 }
 
 // The most a card may hold, with long names: every reply stays near 4 KB.
@@ -396,7 +435,9 @@ void Bounded() {
     std::vector<uint8_t> saved;
     replies.push_back(card.SetMode(first, "loop", saved));
     assert(replies.back().ok && saved.size() == 1 + 64 * 9);
-    replies.push_back(card.ForgetProgress(first, false));
+    replies.push_back(card.ForgetProgress(first, false, false));
+    card.Heard();
+    replies.push_back(card.ForgetProgress(first, false, true));
     assert(replies.back().ok && card.TakeForget()->directory == size_t{0});
     for (const auto& reply : replies)
         assert(reply.text.size() <= 4096 && WholeUtf8(reply.text));
@@ -498,7 +539,17 @@ class M3AiLibraryHostTests(unittest.TestCase):
         forget_tool = board.split('"self.story.forget_progress"', 1)[1].split("});", 1)[0]
         self.assertIn("Card::Shared().ForgetProgress(", forget_tool)
         description = "".join(re.findall(r'"([^"]*)"', forget_tool.split("PropertyList(", 1)[0]))
-        self.assertIn("call this only after the user agrees", description)
+        self.assertIn("Only after the user agrees, call again", description)
+        self.assertIn('Property("confirmed", kPropertyTypeBoolean, false)', forget_tool)
+        self.assertIn("properties[\"all\"].value<bool>(),\n                    confirmed);", forget_tool)
+        # The user's words (the subtitles) let a forget be confirmed; each
+        # conversation the device opens starts with nothing asked about.
+        display = board.split("class AiDisplay final", 1)[1].split("\n};", 1)[0]
+        user = display.split('if (std::strcmp(role, "user") == 0) {', 1)[1].split("\n        }\n", 1)[0]
+        self.assertIn("boilon::ai::card::Card::Shared().Heard();", user)
+        self.assertEqual(board.count("Card::Shared().Heard()"), 1)
+        opened = run.split("if (session.Open(NowMs())) {", 1)[1].split("} else {", 1)[0]
+        self.assertIn("card.NewConversation();", opened)
         self.assertNotIn("nvs_", forget_tool)
         self.assertLess(run.index("if (const auto pick = card.Take()) {"),
                         run.index("forgetting = card.TakeForget();"))

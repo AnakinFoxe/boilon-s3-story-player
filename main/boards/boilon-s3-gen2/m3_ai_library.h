@@ -429,9 +429,12 @@ public:
         return ModesFor(*catalog, saved_);
     }
     // self.story.forget_progress (2026-10-16). Without a name: the pick not taken
-    // yet, else the selected directory, as in SetMode. The reply says whether
-    // the conversation ends: it does when this includes the selected directory.
-    Reply ForgetProgress(std::string_view directory, bool all) {
+    // yet, else the selected directory, as in SetMode. It takes two calls: the
+    // first only records the request for 喵喵 to ask about; one with confirmed
+    // forgets it only once the user's words came in since (Heard). The reply
+    // then says whether the conversation ends: it does when this includes the
+    // selected directory.
+    Reply ForgetProgress(std::string_view directory, bool all, bool confirmed) {
         const auto* catalog = catalog_.load(std::memory_order_acquire);
         if (!catalog)
             return {false, kNoCard};
@@ -449,6 +452,24 @@ public:
             if (!request.directory || *request.directory >= catalog->Collections().size())
                 return {false, "Nothing is selected: name the directory."};
         }
+        std::string name = "\"all\"";
+        if (request.directory) {
+            name.clear();
+            AppendString(name, Shorten(DirectoryName(catalog->Collections()[*request.directory])));
+        }
+        if (!confirmed) {
+            asked_ = Asked{request, heard_};
+            return {true,
+                    "{\"forgot\":\"nothing yet\",\"ask\":" + name +
+                        ",\"then\":\"after the user agrees, call again with confirmed true\"}"};
+        }
+        if (!asked_ || asked_->forget.directory != request.directory)
+            return {false,
+                    "Not asked about this yet: call without confirmed first, then ask the user."};
+        if (asked_->heard == heard_)
+            return {false,
+                    "The user has not answered yet: ask, wait for the answer, then call again with "
+                    "confirmed true."};
         // One request waits for the player at a time; "all" covers any other.
         if (forget_ && forget_->directory != request.directory) {
             if (forget_->directory && request.directory)
@@ -457,19 +478,26 @@ public:
         } else {
             forget_ = request;
         }
+        asked_.reset();
         const bool current = now && (!request.directory || *request.directory == *now);
-        std::string out = "{\"forgot\":";
-        if (request.directory)
-            AppendString(out, Shorten(DirectoryName(catalog->Collections()[*request.directory])));
-        else
-            out += "\"all\"";
-        out += current ? ",\"conversation\":\"ends when you finish this answer\"}"
-                       : ",\"conversation\":\"goes on\"}";
-        return {true, out};
+        return {true, "{\"forgot\":" + name +
+                          (current ? ",\"conversation\":\"ends when you finish this answer\"}"
+                                   : ",\"conversation\":\"goes on\"}")};
     }
     std::optional<Forget> TakeForget() {
         std::lock_guard<std::mutex> lock(mutex_);
         return std::exchange(forget_, std::nullopt);
+    }
+    // The server sent the user's words (the subtitles), on the main task before
+    // any tool call that answers them. Only counted, never kept.
+    void Heard() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ++heard_;
+    }
+    // A conversation starts: nothing asked about before can be confirmed now.
+    void NewConversation() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        asked_.reset();
     }
 
 private:
@@ -486,6 +514,13 @@ private:
     mutable std::mutex mutex_;
     std::optional<Pick> pending_;
     std::optional<Forget> forget_;
+    // A forget 喵喵 asked about, and how many of the user's words had come in.
+    struct Asked {
+        Forget forget;
+        uint32_t heard = 0;
+    };
+    std::optional<Asked> asked_;
+    uint32_t heard_ = 0;
     std::vector<Saved> saved_;
     bool changed_ = false;
 };

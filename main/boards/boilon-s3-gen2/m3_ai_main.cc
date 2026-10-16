@@ -603,10 +603,12 @@ void ApplyModes(boilon::local_library::Runtime<LocalMp3Player>& runtime,
         using boilon::ai::EndReason;
         if (gesture == Action::kOpenAi) {
             const auto state = runtime.Controller().State();
-            if (session.Open(NowMs()))
+            if (session.Open(NowMs())) {
                 opened_ms = NowMs();
-            else
+                card.NewConversation();  // 2026-10-16: no earlier forget can be confirmed.
+            } else {
                 refused_ms = NowMs();
+            }
             ESP_LOGI(kTag, "AI open %s story_state=%d", session.Active() ? "accepted" : "refused",
                      static_cast<int>(state));
         }
