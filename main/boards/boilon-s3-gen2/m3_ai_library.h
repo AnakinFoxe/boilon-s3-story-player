@@ -28,6 +28,10 @@ struct Pick {
     size_t directory = 0;  // Place in the catalog's collections.
     size_t number = 0;     // 1-based file; 0 continues from the bookmark.
 };
+// 2026-10-16: progress to forget, one directory's or (none) all of it.
+struct Forget {
+    std::optional<size_t> directory;  // Place in the catalog's collections.
+};
 // JSON for the model, or (not ok) why not.
 struct Reply {
     bool ok = false;
@@ -424,6 +428,49 @@ public:
             return std::nullopt;
         return ModesFor(*catalog, saved_);
     }
+    // self.story.forget_progress (2026-10-16). Without a name: the pick not taken
+    // yet, else the selected directory, as in SetMode. The reply says whether
+    // the conversation ends: it does when this includes the selected directory.
+    Reply ForgetProgress(std::string_view directory, bool all) {
+        const auto* catalog = catalog_.load(std::memory_order_acquire);
+        if (!catalog)
+            return {false, kNoCard};
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::optional<size_t> now;
+        if (pending_)
+            now = pending_->directory;
+        else if (const auto selected = Now())
+            now = selected->first;
+        Forget request;
+        if (!all) {
+            request.directory = directory.empty() ? now : FindDirectory(*catalog, directory);
+            if (!request.directory && !directory.empty())
+                return NoDirectory(*catalog, directory);
+            if (!request.directory || *request.directory >= catalog->Collections().size())
+                return {false, "Nothing is selected: name the directory."};
+        }
+        // One request waits for the player at a time; "all" covers any other.
+        if (forget_ && forget_->directory != request.directory) {
+            if (forget_->directory && request.directory)
+                return {false, "Still forgetting the last directory: try again in a moment."};
+            forget_->directory.reset();
+        } else {
+            forget_ = request;
+        }
+        const bool current = now && (!request.directory || *request.directory == *now);
+        std::string out = "{\"forgot\":";
+        if (request.directory)
+            AppendString(out, Shorten(DirectoryName(catalog->Collections()[*request.directory])));
+        else
+            out += "\"all\"";
+        out += current ? ",\"conversation\":\"ends when you finish this answer\"}"
+                       : ",\"conversation\":\"goes on\"}";
+        return {true, out};
+    }
+    std::optional<Forget> TakeForget() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return std::exchange(forget_, std::nullopt);
+    }
 
 private:
     std::optional<std::pair<size_t, size_t>> Now() const {
@@ -438,6 +485,7 @@ private:
     std::atomic<uint32_t> now_{0};
     mutable std::mutex mutex_;
     std::optional<Pick> pending_;
+    std::optional<Forget> forget_;
     std::vector<Saved> saved_;
     bool changed_ = false;
 };

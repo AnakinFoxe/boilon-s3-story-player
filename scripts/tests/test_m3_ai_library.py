@@ -311,6 +311,55 @@ void Modes() {
     assert(card.SetMode("凯叔西游记", "loop", saved).text == kNoCard && !card.TakeModes());
 }
 
+// 2026-10-16: what self.story.forget_progress leaves for the player and says.
+void Forgets() {
+    const auto catalog = Library();
+    const auto xiyou = Index(catalog, "凯叔西游记"), sanguo = Index(catalog, "钱儿爸超级三国");
+    Card card;
+    assert(card.ForgetProgress("凯叔西游记", false).text == kNoCard && !card.TakeForget());
+    card.Publish(&catalog);
+    auto reply = card.ForgetProgress("", false);  // Nothing selected: name it, or all.
+    assert(!reply.ok && reply.text == "Nothing is selected: name the directory.");
+    reply = card.ForgetProgress("", true);
+    assert(reply.ok && reply.text == R"({"forgot":"all","conversation":"goes on"})");
+    auto taken = card.TakeForget();
+    assert(taken && !taken->directory && !card.TakeForget());
+    // The selected directory, or all: the conversation ends; another one: it goes on.
+    card.SetNow(std::make_pair(xiyou, size_t{7}));
+    reply = card.ForgetProgress("", false);
+    assert(reply.text ==
+           R"({"forgot":"凯叔西游记","conversation":"ends when you finish this answer"})");
+    taken = card.TakeForget();
+    assert(taken && taken->directory == xiyou);
+    reply = card.ForgetProgress("钱儿爸", false);
+    assert(reply.text == R"({"forgot":"钱儿爸超级三国","conversation":"goes on"})");
+    assert(card.TakeForget()->directory == sanguo);
+    reply = card.ForgetProgress("", true);
+    assert(reply.text == R"({"forgot":"all","conversation":"ends when you finish this answer"})");
+    assert(!card.TakeForget()->directory);
+    assert(Has(card.ForgetProgress("凯叔西游记", true).text, R"("forgot":"all")"));
+    assert(!card.TakeForget()->directory);
+    // A pick not taken yet is "this one"; the forget leaves the pick to the player.
+    assert(card.Play("钱儿爸超级三国", 2).ok);
+    reply = card.ForgetProgress("", false);
+    assert(reply.text ==
+           R"({"forgot":"钱儿爸超级三国","conversation":"ends when you finish this answer"})");
+    assert(card.Take() && card.TakeForget()->directory == sanguo);
+    assert(!card.ForgetProgress("西游记", false).ok && !card.ForgetProgress("没有这个", false).ok);
+    assert(!card.TakeForget());
+    // One request waits for the player at a time: the same one or all merge.
+    assert(card.ForgetProgress("凯叔西游记", false).ok && card.ForgetProgress("凯叔", false).ok);
+    reply = card.ForgetProgress("钱儿爸超级三国", false);
+    assert(!reply.ok && reply.text == "Still forgetting the last directory: try again in a moment.");
+    assert(card.ForgetProgress("钱儿爸超级三国", true).ok);
+    taken = card.TakeForget();
+    assert(taken && !taken->directory && !card.TakeForget());
+    assert(card.ForgetProgress("", true).ok && card.ForgetProgress("钱儿爸超级三国", false).ok);
+    assert(!card.TakeForget()->directory && !card.TakeForget());
+    card.Publish(nullptr);
+    assert(card.ForgetProgress("", true).text == kNoCard && !card.TakeForget());
+}
+
 // The most a card may hold, with long names: every reply stays near 4 KB.
 void Bounded() {
     media::MediaCatalogBuilder builder("full");
@@ -347,6 +396,8 @@ void Bounded() {
     std::vector<uint8_t> saved;
     replies.push_back(card.SetMode(first, "loop", saved));
     assert(replies.back().ok && saved.size() == 1 + 64 * 9);
+    replies.push_back(card.ForgetProgress(first, false));
+    assert(replies.back().ok && card.TakeForget()->directory == size_t{0});
     for (const auto& reply : replies)
         assert(reply.text.size() <= 4096 && WholeUtf8(reply.text));
     assert(!card.List("", "", 5).ok && Has(replies[8].text, " and 44 more."));
@@ -360,6 +411,7 @@ int main() {
     Search();
     Picks();
     Modes();
+    Forgets();
     Bounded();
 }
 '''
@@ -439,6 +491,26 @@ class M3AiLibraryHostTests(unittest.TestCase):
         self.assertIn("page.EndAfterReply(now);", no_story)
         self.assertIn('if (power_off && !page.Conversation().Active())\n            PowerOff("USER");',
                       no_story)
+        # 2026-10-16: forgetting progress forwards to the card, asks to confirm
+        # first, and the player applies it after the picks and before pause or
+        # power-off, ending the conversation when it includes what is selected.
+        self.assertIn("self.story.forget_progress", names)
+        forget_tool = board.split('"self.story.forget_progress"', 1)[1].split("});", 1)[0]
+        self.assertIn("Card::Shared().ForgetProgress(", forget_tool)
+        description = "".join(re.findall(r'"([^"]*)"', forget_tool.split("PropertyList(", 1)[0]))
+        self.assertIn("call this only after the user agrees", description)
+        self.assertNotIn("nvs_", forget_tool)
+        self.assertLess(run.index("if (const auto pick = card.Take()) {"),
+                        run.index("forgetting = card.TakeForget();"))
+        self.assertLess(run.index("forgetting = card.TakeForget();"),
+                        run.index("if (const auto end = boilon::ai::TakeStoryEnd();"))
+        forget = run.split("forgetting = card.TakeForget();", 1)[1].split("\n        }\n", 1)[0]
+        self.assertIn("const auto now = focus.Picked() ? focus.Picked() : runtime.Selected();",
+                      forget)
+        self.assertLess(forget.index("if (runtime.Forget(forgetting->directory, NowMs())) {"),
+                        forget.index("session.EndAfterReply(NowMs());"))
+        self.assertLess(forget.index("session.EndAfterReply(NowMs());"),
+                        forget.index("forgetting.reset();"))
         # The previous key no longer restarts the current file first.
         previous = runtime.split("case media::GestureAction::kPreviousTrack:", 1)[1]
         self.assertNotIn("RestartAt", previous.split("default:", 1)[0])

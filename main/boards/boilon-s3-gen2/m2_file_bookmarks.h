@@ -11,7 +11,7 @@ namespace boilon::local_library {
 // size/mtime stay in the record so replaced files fail the existing stale check.
 class FileBookmarks final : public media::ResumeStore {
 public:
-    FileBookmarks(ResumeBlob& blob, media::ResumeStore& legacy, media::MediaCatalog catalog,
+    FileBookmarks(ResumeBlob& blob, BlobResumeStore& legacy, media::MediaCatalog catalog,
                   size_t capacity = BOILON_S3_GEN2_BOOKMARK_CAPACITY)
         : blob_(blob), legacy_(legacy), catalog_(std::move(catalog)), capacity_(capacity) {}
     bool WriteVolume(int volume) {
@@ -46,19 +46,8 @@ public:
             (write_volume_ && (*write_volume_ < 0 || *write_volume_ > 200)))
             return media::ResumeWrite::kError;
         std::vector<Entry> entries;
-        const auto status = Load(entries);
-        if (status == media::ResumeRead::kError)
+        if (Current(record.library_key, entries) == media::ResumeRead::kError)
             return media::ResumeWrite::kError;
-        if (status == media::ResumeRead::kMissing) {
-            for (const auto& collection : catalog_.Collections()) {
-                media::ResumeRecord old;
-                const auto found = legacy_.Read(record.library_key, collection.id, old);
-                if (found == media::ResumeRead::kError)
-                    return media::ResumeWrite::kError;
-                if (found == media::ResumeRead::kFound)
-                    entries.push_back(From(old));
-            }
-        }
         const auto library = Hash(record.library_key);
         entries.erase(std::remove_if(entries.begin(), entries.end(),
                                      [&](const auto& item) {
@@ -72,6 +61,59 @@ public:
         entries.push_back(entry);
         if (entries.size() > capacity_)
             entries.erase(entries.begin(), entries.end() - capacity_);
+        return Store(entries);
+    }
+    // 2026-10-16: forgets this library's bookmarks in one collection, or with
+    // none every bookmark on the device. Never writes an empty table: older
+    // releases read one as damaged and then could not save again. With nothing
+    // left both keys go, the old format first, or its records would come back.
+    media::ResumeWrite Forget(const std::string& library,
+                              std::optional<media::MediaId> collection) {
+        if (collection) {
+            std::vector<Entry> entries;
+            if (Current(library, entries) == media::ResumeRead::kError)
+                return media::ResumeWrite::kError;
+            const auto count = entries.size();
+            const auto key = Hash(library);
+            entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                         [&](const auto& item) {
+                                             return item.library == key &&
+                                                    item.collection == collection->value;
+                                         }),
+                          entries.end());
+            if (entries.size() == count)
+                return media::ResumeWrite::kOk;  // Nothing of it was saved.
+            if (!entries.empty())
+                return Store(entries);
+        }
+        if (!legacy_.Erase() || !blob_.Erase())
+            return media::ResumeWrite::kError;
+        snapshot_.clear();
+        return media::ResumeWrite::kOk;
+    }
+
+private:
+    struct Entry {
+        uint64_t library, track, collection, size, modified, position, duration;
+        uint32_t volume;
+    };
+    // The table a change starts from: the saved one or, before its first
+    // write, this library's records in the old format.
+    media::ResumeRead Current(const std::string& library, std::vector<Entry>& entries) const {
+        const auto status = Load(entries);
+        if (status != media::ResumeRead::kMissing)
+            return status;
+        for (const auto& collection : catalog_.Collections()) {
+            media::ResumeRecord old;
+            const auto found = legacy_.Read(library, collection.id, old);
+            if (found == media::ResumeRead::kError)
+                return media::ResumeRead::kError;
+            if (found == media::ResumeRead::kFound)
+                entries.push_back(From(old));
+        }
+        return media::ResumeRead::kMissing;
+    }
+    media::ResumeWrite Store(const std::vector<Entry>& entries) {
         std::vector<uint8_t> bytes{'B', 'F', 'R', '2'};
         Put(bytes, entries.size(), 4);
         for (const auto& e : entries) {
@@ -86,12 +128,6 @@ public:
         snapshot_ = entries;
         return media::ResumeWrite::kOk;
     }
-
-private:
-    struct Entry {
-        uint64_t library, track, collection, size, modified, position, duration;
-        uint32_t volume;
-    };
     static Entry From(const media::ResumeRecord& record) {
         return {Hash(record.library_key),
                 record.media.track.id.value,
@@ -191,7 +227,7 @@ private:
         return status;
     }
     ResumeBlob& blob_;
-    media::ResumeStore& legacy_;
+    BlobResumeStore& legacy_;
     media::MediaCatalog catalog_;
     size_t capacity_;
     mutable std::vector<Entry> snapshot_;

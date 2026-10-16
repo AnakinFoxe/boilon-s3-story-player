@@ -21,9 +21,12 @@ namespace library = boilon::local_library;
 using namespace media;
 constexpr const char* kLibrary = "bookmark-test-card";
 
+std::vector<std::string> erased;  // Which blobs were deleted, in order.
+
 struct MemoryBlob : library::ResumeBlob {
     std::vector<uint8_t> bytes;
-    bool write_error = false;
+    bool write_error = false, erase_error = false;
+    std::string name;
     mutable unsigned reads = 0;
     unsigned writes = 0;
     ResumeRead Read(std::vector<uint8_t>& out) const override {
@@ -34,8 +37,16 @@ struct MemoryBlob : library::ResumeBlob {
     }
     bool Write(const std::vector<uint8_t>& in) override {
         ++writes;
+        // Never a table without records: older releases read one as damaged.
+        assert(in.size() >= 8 && (in[4] || in[5] || in[6] || in[7]));
         if (write_error) return false;
         bytes = in;
+        return true;
+    }
+    bool Erase() override {
+        erased.push_back(name);
+        if (erase_error) return false;
+        bytes.clear();
         return true;
     }
 };
@@ -267,6 +278,131 @@ void EndOfFile() {
     }
 }
 
+// 2026-10-16: forgetting progress. 西游记 holds two files, 三国 one.
+MediaCatalog TwoDirectories() {
+    MediaCatalogBuilder builder(kLibrary);
+    for (unsigned i = 0; i < 3; ++i)
+        assert(builder.Add({i < 2 ? u8"西游记" : u8"三国", Name(i), 1000 + i, 100 + i}) ==
+               AddResult::kAdded);
+    auto built = builder.Finish();
+    assert(built.Ok());
+    return std::move(built.catalog);
+}
+
+MediaId Directory(const MediaCatalog& catalog, const std::string& name) {
+    for (const auto& collection : catalog.Collections())
+        if (collection.directory_name == name) return collection.id;
+    assert(false);
+    return {};
+}
+
+void Forget() {
+    const auto catalog = TwoDirectories();
+    const auto xiyou = Directory(catalog, u8"西游记"), sanguo = Directory(catalog, u8"三国");
+    MemoryBlob compact, old;
+    compact.name = "v2";
+    old.name = "v1";
+    library::BlobResumeStore legacy(old);
+    library::FileBookmarks files(compact, legacy, catalog);
+    assert(files.Write(Record(catalog, 0, 41000)) == ResumeWrite::kOk);
+    assert(files.Write(Record(catalog, 1, 42000)) == ResumeWrite::kOk);
+    assert(files.Write(Record(catalog, 2, 43000)) == ResumeWrite::kOk);
+    auto other = Record(catalog, 0, 44000);  // 西游记 on another card.
+    other.library_key = "other-card";
+    assert(files.Write(other) == ResumeWrite::kOk);
+    const auto writes = compact.writes;
+    // One directory of this card: 三国 and the other card's 西游记 stay.
+    assert(files.Forget(kLibrary, xiyou) == ResumeWrite::kOk);
+    assert(compact.writes == writes + 1 && compact.bytes.size() == 12 + 2 * 60 && erased.empty());
+    const auto positions = files.Positions(kLibrary);
+    assert(positions.size() == 1 && positions[0].first == SelectedTrack(catalog, 2).track.id);
+    library::BlobResumeStore restarted_legacy(old);
+    library::FileBookmarks fresh(compact, restarted_legacy, catalog);
+    ResumeRecord out;
+    for (unsigned index : {0u, 1u})
+        assert(fresh.ReadTrack(kLibrary, SelectedTrack(catalog, index).track.id, out) ==
+               ResumeRead::kMissing);
+    assert(fresh.ReadTrack(kLibrary, SelectedTrack(catalog, 2).track.id, out) ==
+           ResumeRead::kFound && out.position_ms == 43000);
+    assert(fresh.ReadTrack("other-card", SelectedTrack(catalog, 0).track.id, out) ==
+           ResumeRead::kFound && out.position_ms == 44000);
+    // Nothing of it left: nothing is written.
+    assert(files.Forget(kLibrary, xiyou) == ResumeWrite::kOk && compact.writes == writes + 1);
+    assert(files.Forget(kLibrary, sanguo) == ResumeWrite::kOk);
+    assert(compact.writes == writes + 2 && compact.bytes.size() == 12 + 60 && erased.empty());
+    assert(files.Positions(kLibrary).empty());
+    // The last record: no empty table, both keys go, the old format first.
+    // Otherwise this old 西游记 record would come back.
+    assert(legacy.Write(Record(catalog, 1, 9000)) == ResumeWrite::kOk);
+    assert(files.Forget("other-card", xiyou) == ResumeWrite::kOk);
+    assert(compact.writes == writes + 2 && compact.bytes.empty() && old.bytes.empty());
+    assert(erased == (std::vector<std::string>{"v1", "v2"}));
+    library::FileBookmarks after(compact, legacy, catalog);
+    assert(after.ReadTrack(kLibrary, SelectedTrack(catalog, 1).track.id, out) ==
+           ResumeRead::kMissing);
+    // A damaged table: one directory cannot be forgotten, everything can, and
+    // saving works again afterwards.
+    assert(files.Write(Record(catalog, 0, 41000)) == ResumeWrite::kOk);
+    compact.bytes.back() ^= 1;
+    const auto damaged = compact.bytes;
+    erased.clear();
+    assert(files.Forget(kLibrary, sanguo) == ResumeWrite::kError && compact.bytes == damaged);
+    assert(erased.empty());
+    assert(files.Forget(kLibrary, std::nullopt) == ResumeWrite::kOk && compact.bytes.empty());
+    assert(erased == (std::vector<std::string>{"v1", "v2"}) && files.Positions(kLibrary).empty());
+    assert(files.Write(Record(catalog, 2, 43000)) == ResumeWrite::kOk);
+    // Failed deletes and writes say so and keep what was there; v2 never goes
+    // while v1 stays.
+    const auto kept = compact.bytes;
+    old.erase_error = true;
+    erased.clear();
+    assert(files.Forget(kLibrary, std::nullopt) == ResumeWrite::kError && compact.bytes == kept);
+    assert(erased == (std::vector<std::string>{"v1"}));
+    old.erase_error = false;
+    compact.erase_error = true;
+    assert(files.Forget(kLibrary, sanguo) == ResumeWrite::kError && compact.bytes == kept);
+    assert(files.Positions(kLibrary).size() == 1);
+    compact.erase_error = false;
+    assert(files.Write(Record(catalog, 0, 41000)) == ResumeWrite::kOk);
+    const auto two = compact.bytes;
+    compact.write_error = true;
+    assert(files.Forget(kLibrary, sanguo) == ResumeWrite::kError && compact.bytes == two);
+    assert(files.Positions(kLibrary).size() == 2);
+    compact.write_error = false;
+}
+
+// Before the first table only the old format holds this card's records.
+void ForgetBeforeFirstWrite() {
+    const auto catalog = TwoDirectories();
+    const auto xiyou = Directory(catalog, u8"西游记"), sanguo = Directory(catalog, u8"三国");
+    MemoryBlob compact, old;
+    library::BlobResumeStore legacy(old);
+    assert(legacy.Write(Record(catalog, 0, 41000)) == ResumeWrite::kOk);
+    assert(legacy.Write(Record(catalog, 2, 43000)) == ResumeWrite::kOk);
+    const auto original = old.bytes;
+    library::FileBookmarks files(compact, legacy, catalog);
+    // The first table holds what is left; 三国 does not come back from v1.
+    assert(files.Forget(kLibrary, sanguo) == ResumeWrite::kOk);
+    assert(compact.bytes.size() == 12 + 60 && old.bytes == original && erased.empty());
+    library::FileBookmarks fresh(compact, legacy, catalog);
+    ResumeRecord out;
+    assert(fresh.ReadTrack(kLibrary, SelectedTrack(catalog, 2).track.id, out) ==
+           ResumeRead::kMissing);
+    assert(fresh.ReadTrack(kLibrary, SelectedTrack(catalog, 0).track.id, out) ==
+           ResumeRead::kFound && out.position_ms == 41000);
+    // Nothing saved of it: nothing written; the last of it: v1 goes, no table.
+    MemoryBlob none, only;
+    library::BlobResumeStore only_legacy(only);
+    assert(only_legacy.Write(Record(catalog, 0, 41000)) == ResumeWrite::kOk);
+    library::FileBookmarks first(none, only_legacy, catalog);
+    assert(first.Forget(kLibrary, sanguo) == ResumeWrite::kOk);
+    assert(none.writes == 0 && !only.bytes.empty() && erased.empty());
+    assert(first.Forget(kLibrary, xiyou) == ResumeWrite::kOk);
+    assert(none.writes == 0 && none.bytes.empty() && only.bytes.empty() && erased.size() == 2);
+    assert(first.ReadTrack(kLibrary, SelectedTrack(catalog, 0).track.id, out) ==
+           ResumeRead::kMissing);
+}
+
 int main(int argc, char** argv) {
     assert(argc == 2);
     const std::string mode(argv[1]);
@@ -277,6 +413,8 @@ int main(int argc, char** argv) {
     else if (mode == "integrity") IntegrityAndWriteFailure();
     else if (mode == "stale") StaleMetadata();
     else if (mode == "eof") EndOfFile();
+    else if (mode == "forget") Forget();
+    else if (mode == "forget_first") ForgetBeforeFirstWrite();
     else return 2;
     std::cout << mode << " PASS\n";
 }
@@ -339,6 +477,12 @@ class M2FileBookmarkTests(unittest.TestCase):
 
     def test_eof_checkpoint_restores_at_start(self):
         self.scenario("eof")
+
+    def test_forget_one_directory_the_last_record_or_all_never_an_empty_table(self):
+        self.scenario("forget")
+
+    def test_forget_before_the_first_table_keeps_old_records_from_coming_back(self):
+        self.scenario("forget_first")
 
 
 if __name__ == "__main__":

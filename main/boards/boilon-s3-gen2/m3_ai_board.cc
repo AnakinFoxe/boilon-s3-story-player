@@ -407,7 +407,7 @@ public:
     }
 
 private:
-    // 2026-10-15: the play mode, pause and power-off tools.
+    // 2026-10-15: the play mode, pause and power-off tools; 2026-10-16 forgetting progress.
     void AddPlayerTools() {
         McpServer::GetInstance().AddTool(
             "self.story.set_play_mode",
@@ -453,6 +453,31 @@ private:
             PropertyList(), [](const PropertyList&) -> ToolResult {
                 story_end = boilon::ai::StoryEnd::kPowerOff;
                 return std::string(R"({"power":"off","starts":"when you finish this answer"})");
+            });
+        // 2026-10-16: the player deletes the bookmarks at once; the story playing
+        // now, if among them, starts again from its first file after the answer.
+        McpServer::GetInstance().AddTool(
+            "self.story.forget_progress",
+            "Forget where the stories were last heard (播放进度), so they start again from the "
+            "beginning, when the user asks (for example: 把西游记的进度清掉, 清除所有播放进度). "
+            "Forgotten progress cannot come back: first say exactly what will be forgotten, a "
+            "directory's name or all progress on this story player, and call this only after "
+            "the user agrees. directory: a name from self.story.list; empty means the one playing "
+            "now, or the one just picked with self.story.play. all: true forgets every "
+            "directory's progress. The volume and the play modes stay. When it includes the "
+            "directory playing now, the conversation ends when you finish this answer and that "
+            "directory plays from its first file's beginning (or what you just picked plays); "
+            "otherwise the conversation goes on. To hear one file from its beginning, use "
+            "self.story.play with its number instead.",
+            PropertyList({Property("directory", kPropertyTypeString, std::string()),
+                          Property("all", kPropertyTypeBoolean, false)}),
+            [](const PropertyList& properties) -> ToolResult {
+                const auto reply = boilon::ai::card::Card::Shared().ForgetProgress(
+                    properties["directory"].value<std::string>(), properties["all"].value<bool>());
+                ESP_LOGI(kTag, "Forget request %s", reply.ok ? "accepted" : "refused");
+                if (!reply.ok)
+                    return std::unexpected(reply.text);
+                return reply.text;
             });
     }
 

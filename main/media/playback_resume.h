@@ -59,6 +59,9 @@ public:
                     uint64_t now_ms, CheckpointReason reason);
     ResumePlan Restore(std::optional<MediaId> collection, ResumeMode mode) const;
     std::optional<uint64_t> LastSuccessfulSaveMs() const { return last_success_ms_; }
+    // The store forgot records behind this policy (2026-10-16): the next save
+    // writes even when it repeats the last one.
+    void ForgetLastSave() { confirmed_.reset(); }
 
 private:
     bool ValidLibrary() const;

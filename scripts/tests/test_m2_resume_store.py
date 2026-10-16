@@ -40,7 +40,7 @@ class M2ResumeStoreTests(unittest.TestCase):
     def test_real_resume_policy_rewind_and_session_start(self):
         self.scenario("session")
 
-    def test_nvs_exact_calls_failures_close_and_no_erase(self):
+    def test_nvs_exact_calls_failures_close_and_only_key_erase(self):
         self.scenario("nvs")
 
 

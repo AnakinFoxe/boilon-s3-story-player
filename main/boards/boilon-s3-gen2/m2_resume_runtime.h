@@ -14,6 +14,9 @@ public:
     virtual bool Checkpoint(const media::ResolvedTrack&, uint64_t, uint64_t, int, uint64_t,
                             media::CheckpointReason) = 0;
     virtual uint64_t KnownDuration(media::MediaId) { return 0; }
+    // 2026-10-16: deletes one collection's bookmarks, or (none) all of them,
+    // after the saves already queued. A port without storage has none to forget.
+    virtual bool Forget(std::optional<media::MediaId>) { return true; }
 };
 template <typename P, typename = void>
 struct HasResume : std::false_type {};
