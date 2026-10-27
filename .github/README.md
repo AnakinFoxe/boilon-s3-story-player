@@ -33,7 +33,8 @@ xiaozhi.me 的智能体里设置。
 
 固件在 [Releases](https://github.com/AnakinFoxe/boilon-s3-story-player/releases) 里，文件名是 `boilon-ai-player-vX.Y.Z.bin`。
 第一次要用 USB：一条命令 `python3 boilon_flash.py install boilon-ai-player-vX.Y.Z.bin` 先整片备份、再写入，出了问题用自己的
-备份刷回，步骤见[刷机说明](../docs/boilon/FLASHING.md)。之后从 TF 卡升级。
+备份刷回，步骤见[刷机说明](../docs/boilon/FLASHING.md)。不想装 Python 的，也可以在网页上刷，但不备份，见同一份说明。之后从
+TF 卡升级。
 
 没存过 Wi-Fi 时，它就是只在本地放故事的播放器：不开 Wi-Fi，也不会自己打开热点。v1.4.0 及更早的 Release 还附有只离线的变体
 `-offline.bin`，之后不再提供（2026-10-16）。
